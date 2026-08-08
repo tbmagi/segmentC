@@ -1,0 +1,219 @@
+"""Tests af konfiguration, filnavne og Excel-rapportens kolonner."""
+
+import os
+
+import pandas as pd
+import pytest
+
+from segmentering.config import Band, Config, OutputPaths, validate_bands
+from segmentering.dataio import GROUP, ITEM_NO
+from segmentering.excel_report import (
+    SUMMARY_COLUMNS,
+    prepare_item_sheet,
+    prepare_summary_sheet,
+)
+from segmentering.metrics import (
+    FIRST_ACTIVITY,
+    GP_SUM,
+    ITEM_GM,
+    LAST_ACTIVITY,
+    TURNOVER_SUM,
+    WINDOW_GROUP,
+    WINDOW_ITEM,
+)
+
+
+# --- Validering --------------------------------------------------------------
+
+
+def test_overlapping_category_bands_are_rejected():
+    """
+    Overlappende bånd gjorde resultatet afhængigt af rækkefølgen. Nu fanges
+    de med en besked der peger på de to bånd der er i konflikt.
+    """
+    bands = {"A": Band(1_000, None, 0.2), "B": Band(500, 2_000, 0.3)}
+    with pytest.raises(ValueError, match="overlapper"):
+        validate_bands(bands, "Kundekategori")
+
+
+def test_adjacent_bands_are_allowed():
+    bands = {"A": Band(1_000, None, 0.2), "B": Band(0, 1_000, 0.3)}
+    validate_bands(bands, "Kundekategori")  # må ikke rejse
+
+
+def test_volume_zones_may_overlap():
+    """Volumen-områder tegnes oven på hinanden og bruges ikke til klassifikation."""
+    zones = {"Stor": Band(100, None, 0.2), "Mellem": Band(50, 500, 0.3)}
+    validate_bands(zones, "Volumenområde A", require_disjoint=False)
+
+
+def test_inverted_band_is_rejected():
+    with pytest.raises(ValueError, match="større end"):
+        validate_bands({"A": Band(1_000, 500, 0.2)}, "Kundekategori")
+
+
+def test_gm_outside_zero_to_one_is_rejected():
+    with pytest.raises(ValueError, match="mellem 0 og 100"):
+        validate_bands({"A": Band(0, None, 20)}, "Kundekategori")
+
+
+@pytest.mark.parametrize(
+    "changes, message",
+    [
+        ({"gm_months": 0}, "GM-måneder"),
+        ({"turnover_window_months": 0}, "Turnover-vinduet"),
+        ({"excel_detail": "alt"}, "Excel-detaljeringsgrad"),
+        ({"outlier_metric": "vilkårlig"}, "Outlier-metrik"),
+        ({"group_plot_anchor": "kunden"}, "Forankring"),
+        ({"y_scale": "kvadratisk"}, "Skala"),
+        ({"colour_by": "regnbue"}, "Farvelogik"),
+        (
+            {"geo_combined": False, "geo_cn": False, "geo_dk": False},
+            "Mindst én geografisk opdeling",
+        ),
+    ],
+)
+def test_invalid_settings_are_reported_in_danish(changes, message):
+    with pytest.raises(ValueError, match=message):
+        Config(**changes).validate()
+
+
+def test_default_config_is_valid():
+    Config().validate()
+
+
+def test_config_accepts_raw_tuples_for_bands():
+    cfg = Config(category_bands={"A": (1_000, None, 0.2), "B": (0, 1_000, 0.3)})
+    assert cfg.category_bands["A"] == Band(1_000.0, None, 0.2)
+
+
+# --- Filnavne ----------------------------------------------------------------
+
+
+def test_suffixes_compose_in_a_stable_order():
+    paths = OutputPaths.create("rapport", "/ud", write_excel=True)
+    assert paths.group_plot("sinter", "cn") == os.path.join(
+        "/ud", "rapport_kundegruppe_sinter_cn.html"
+    )
+    assert paths.item_plot("stoebe", "", "eks") == os.path.join(
+        "/ud", "rapport_item_stoebe_eks.html"
+    )
+    assert paths.group_plot() == os.path.join("/ud", "rapport_kundegruppe.html")
+    assert paths.excel == os.path.join("/ud", "rapport.xlsx")
+
+
+def test_extension_in_the_basename_is_stripped_once():
+    assert OutputPaths.create("rapport.xlsx", "/ud", True).basename == "rapport"
+
+
+def test_basename_containing_html_survives():
+    """
+    Filnavnene blev tidligere dannet ved at erstatte '.html' i en færdig sti.
+    Et basisnavn med '.html' midt i kunne dermed ødelægge stien.
+    """
+    paths = OutputPaths.create("min.html.rapport", "/ud", True)
+    assert paths.group_plot("sinter") == os.path.join(
+        "/ud", "min.html.rapport_kundegruppe_sinter.html"
+    )
+
+
+def test_empty_basename_falls_back_to_a_default():
+    assert OutputPaths.create("", "/ud", True).basename == "kunde_segmentering"
+
+
+def test_excel_path_is_none_when_disabled():
+    assert OutputPaths.create("rapport", "/ud", write_excel=False).excel is None
+
+
+# --- Excel-faner -------------------------------------------------------------
+
+
+def sample_group_frame():
+    return pd.DataFrame(
+        [
+            {
+                GROUP: "A",
+                "Kundetype": "Eksisterende",
+                "Kundekategori": "A+",
+                "Industry_segment": "Medico",
+                "antal_items": 3,
+                "samlet_turnover_window": 6_000_000.0,
+                "gns_turnover_window": 2_000_000.0,
+                "samlet_turnover": 500_000.0,
+                "gns_turnover": 166_666.0,
+                "samlet_GP": 150_000.0,
+                "samlet_GM": 0.30,
+                "gns_GM": 0.28,
+                "tidligste_aktivitet": pd.Timestamp("2024-01-01"),
+                "seneste_aktivitet": pd.Timestamp("2025-06-01"),
+            }
+        ]
+    )
+
+
+def test_full_detail_includes_the_average_columns():
+    """
+    'fuld' lovede gennemsnits-kolonner, men de blev aldrig beregnet og faldt
+    lydløst ud af rapporten. Nu skal de være der.
+    """
+    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="fuld"))
+    assert "gns_turnover_window" in sheet.columns
+    assert "gns_GM_pct" in sheet.columns
+    assert sheet["gns_GM_pct"].iloc[0] == pytest.approx(0.28)
+
+
+@pytest.mark.parametrize("detail", ["minimal", "kompakt", "fuld"])
+def test_summary_columns_follow_the_configured_detail(detail):
+    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail=detail))
+    assert list(sheet.columns) == SUMMARY_COLUMNS[detail]
+
+
+def test_detail_levels_are_strictly_nested():
+    """Hver detaljeringsgrad skal indeholde alt fra den lettere grad."""
+    assert set(SUMMARY_COLUMNS["minimal"]) <= set(SUMMARY_COLUMNS["kompakt"])
+    assert set(SUMMARY_COLUMNS["kompakt"]) <= set(SUMMARY_COLUMNS["fuld"])
+
+
+def test_percentages_stay_decimal_so_excel_can_format_them():
+    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="kompakt"))
+    assert sheet["samlet_GM_pct"].iloc[0] == pytest.approx(0.30)
+
+
+def test_dates_are_written_as_year_month():
+    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="kompakt"))
+    assert sheet["seneste_aktivitet"].iloc[0] == "2025-06"
+
+
+def sample_item_frame():
+    return pd.DataFrame(
+        [
+            {
+                GROUP: "A",
+                ITEM_NO: "701234",
+                TURNOVER_SUM: 1000.0,
+                GP_SUM: 300.0,
+                WINDOW_ITEM: 5000.0,
+                WINDOW_GROUP: 4000.0,
+                ITEM_GM: 0.30,
+                FIRST_ACTIVITY: pd.Timestamp("2024-01-01"),
+                LAST_ACTIVITY: pd.Timestamp("2025-06-01"),
+            }
+        ]
+    )
+
+
+def test_item_sheet_uses_readable_column_names():
+    sheet = prepare_item_sheet(sample_item_frame(), Config(excel_detail="kompakt"))
+    assert "Turnover_DKK_12mdr_item" in sheet.columns
+    assert "Turnover_DKK_12mdr_gruppe" in sheet.columns
+    assert "GM_pct" in sheet.columns
+
+
+def test_item_window_column_follows_the_configured_window():
+    sheet = prepare_item_sheet(sample_item_frame(), Config(turnover_window_months=24))
+    assert "Turnover_DKK_24mdr_item" in sheet.columns
+
+
+def test_minimal_item_sheet_is_reduced():
+    sheet = prepare_item_sheet(sample_item_frame(), Config(excel_detail="minimal"))
+    assert list(sheet.columns) == [GROUP, ITEM_NO, "Turnover_DKK_12mdr_item", "GM_pct"]

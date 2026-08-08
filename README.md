@@ -1,1 +1,123 @@
-# segmentC
+# Kundesegmentering
+
+Læser rå salgsdata fra Excel og producerer interaktive HTML scatter-plots
+(Plotly) samt en formateret Excel-rapport. Hvert punkt er enten én kundegruppe
+eller ét item no.
+
+De to akser er:
+
+- **X: Gross Margin %** – beregnet pr. item på dets seneste aktivitetsmåned(er)
+  og lagt vægtet sammen til kundegruppe-niveau.
+- **Y: Turnover** – summen af salget i et rullende vindue på N måneder.
+
+## Kom i gang
+
+```bash
+pip install -r requirements.txt
+python run_gui.py
+```
+
+Tkinter følger med de fleste Python-installationer. På Debian/Ubuntu skal det
+installeres separat: `sudo apt install python3-tk`.
+
+## Uden brugerflade
+
+Beregningen kan køres direkte fra et script eller en notebook:
+
+```python
+from segmentering import Config, run_analysis
+
+cfg = Config(
+    input_path=r"C:\data\Clean_data.xlsx",
+    reference_date="05-2026",          # MM-ÅÅÅÅ
+    turnover_window_months=12,
+    output_basename="kunde_segmentering",
+    output_dir=r"C:\rapporter",
+)
+results = run_analysis(cfg)
+```
+
+`run_analysis` tager også en `log`-funktion, hvis fremdriftsteksten skal et
+andet sted hen end til `print`.
+
+## Datakrav
+
+Filen skal indeholde disse kolonner (navnene matches uafhængigt af store og
+små bogstaver):
+
+`Statistics group`, `Item no.`, `Year-mo`, `Cost`, `Qty.`, `Turnover DKK`,
+`Local_COGS_DKK`, `Local_GP_DKK`
+
+Disse er valgfrie og aktiverer hver sin funktion:
+
+| Kolonne | Bruges til |
+| --- | --- |
+| `Turnover type` | frasortering og CN/DK-opdeling |
+| `Fiscal year` | identifikation af nye kunder |
+| `Industry_segment` | farve- og kantlogik på kundegruppe-plottet |
+
+## Hvordan data behandles
+
+1. **Frasortering** – ekskluderede kundegrupper og turnover-typer, rækker med
+   turnover 0, og "døde" items uden aktivitet i kundens turnover-vindue.
+2. **Item-type** – item no. klassificeres som sinter (70–77) eller støbe
+   (60–67) ud fra de to første cifre og mindst 6 cifre. Et suffix på nummeret
+   overruler reglen: `-S1` sinter, `-S2` støbe, `-S0` fjern helt.
+3. **Kundetype** – hver kundegruppe bliver Ny, Eksisterende eller Tidligere.
+4. **GM% pr. item** – seneste aktivitetsmåned, eller de seneste N måneder
+   summeret hvis vægtet GM% er slået til.
+5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
+   seneste aktivitet. De to plots kan have hver sin forankring.
+6. **Outlier-filter** – valgfrit z-score-filter inden for hver kundegruppe.
+7. **Kundekategori** – A/B/C/D ud fra turnover-båndet, med `+`/`-` alt efter om
+   GM% når kategoriens krav.
+8. **Output** – HTML-plots og Excel-rapport.
+
+Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
+gennemgående regneeksempel.
+
+## Udsnit og filnavne
+
+Analysen kører ét **udsnit** ad gangen. Udsnittene udspændes af tre valg —
+emne-type, geografi og kundeudvalg — og hvert udsnit får sit eget sæt filer og
+Excel-faner, beregnet forfra på netop de rækker. Plottet og fanerne for et
+udsnit viser derfor altid de samme tal.
+
+```
+<basis>_kundegruppe[_sinter|_stoebe][_cn|_dk][_eks].html
+<basis>_item[_sinter|_stoebe][_cn|_dk][_eks].html
+<basis>.xlsx
+```
+
+## Projektets opbygning
+
+```
+segmentering/          beregningen – kan bruges helt uden brugerflade
+  config.py            Config, bånd, output-stier, validering
+  dataio.py            indlæsning, kolonne-normalisering, rækkefiltre
+  classify.py          item-type, kundetype, kundekategori
+  metrics.py           GM%-grundlag, turnover-vindue, aggregering
+  outliers.py          z-score-filter pr. kundegruppe
+  plots.py             Plotly-figurerne
+  excel_report.py      rapportens faneblade og formatering
+  pipeline.py          orkestrering af udsnittene
+
+gui/                   Tkinter-brugerfladen
+  app.py               hovedvinduet
+  widgets.py           hjælpebobler, sektioner, rulbar side
+  help_window.py       "Sådan behandles data"
+
+run_gui.py             start brugerfladen
+tests/                 pytest-tests af beregningslogikken
+```
+
+Konfigurationen sendes som et `Config`-objekt hele vejen igennem. Ingen
+funktion læser eller ændrer globale indstillinger, så hvert trin kan afprøves
+for sig, og flere analyser kan køre i samme proces uden at påvirke hinanden.
+
+## Tests
+
+```bash
+pip install pytest
+python -m pytest tests/ -q
+```

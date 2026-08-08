@@ -1,0 +1,237 @@
+"""
+Indlæsning og indledende filtrering af salgsdata.
+
+Modulet kender Excel-filens kolonner og oversætter dem til de kanoniske navne
+resten af pakken bruger. Alle filtre er rene funktioner: de tager et
+DataFrame ind og giver et nyt ud.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Callable
+
+import pandas as pd
+from dateutil.relativedelta import relativedelta
+
+from .config import Config
+
+Log = Callable[[str], None]
+
+# Kanoniske kolonnenavne. Excel-filens overskrifter matches case-insensitivt
+# og omdøbes hertil, så resten af koden kan regne med præcis disse navne.
+CUSTOMER_GROUP = "Statistics group"
+ITEM_NO = "item no."
+YEAR_MONTH = "year-mo"
+TURNOVER = "Turnover DKK"
+GROSS_PROFIT = "Local_GP_DKK"
+
+#: Kolonner filen skal indeholde. Bemærk at "cost", "Qty." og "Local_COGS_DKK"
+#: ikke indgår i nogen beregning — de kræves fordi de hører til det aftalte
+#: dataudtræk, og et udtræk uden dem er sandsynligvis forkert eksporteret.
+REQUIRED_COLUMNS = [
+    CUSTOMER_GROUP,
+    ITEM_NO,
+    YEAR_MONTH,
+    "cost",
+    "Qty.",
+    TURNOVER,
+    "Local_COGS_DKK",
+    GROSS_PROFIT,
+]
+
+#: Valgfrie kolonner. Findes de ikke, springes den tilhørende funktion over.
+TURNOVER_TYPE = "Turnover type"
+FISCAL_YEAR = "Fiscal year"
+INDUSTRY_SEGMENT = "Industry_segment"
+
+# Kolonner pakken selv tilføjer undervejs.
+GROUP = "KundeGruppe"
+PERIOD = "year-mo-parsed"
+ITEM_TYPE = "ItemType"
+CUSTOMER_TYPE_GLOBAL = "_customer_type_global"
+HAS_MANUAL_SUFFIX = "_has_manual_suffix"
+
+
+def find_column(df: pd.DataFrame, name: str) -> str | None:
+    """Finder en kolonne case-insensitivt og uafhængigt af omkringliggende mellemrum."""
+    target = name.strip().lower()
+    return next((c for c in df.columns if str(c).strip().lower() == target), None)
+
+
+# --- Dato-parsing ------------------------------------------------------------
+
+
+def parse_month(value: str) -> pd.Timestamp:
+    """Parser "MM-YYYY" til en Timestamp sat til den 1. i måneden."""
+    return pd.to_datetime(value, format="%m-%Y")
+
+
+def parse_period(value: object) -> pd.Timestamp:
+    """
+    Robust parser for kolonnen 'year-mo'.
+
+    Accepterer 'YYYY-MM', 'MM-YYYY', 'YYYYMM' samt datetime/Timestamp.
+    Returnerer NaT for værdier der ikke kan tolkes.
+    """
+    if pd.isna(value):
+        return pd.NaT
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return pd.Timestamp(value).to_period("M").to_timestamp()
+
+    text = str(value).strip()
+    if re.fullmatch(r"\d{4}-\d{1,2}", text):
+        return pd.to_datetime(text, format="%Y-%m", errors="coerce")
+    if re.fullmatch(r"\d{1,2}-\d{4}", text):
+        return pd.to_datetime(text, format="%m-%Y", errors="coerce")
+    if re.fullmatch(r"\d{6}", text):
+        return pd.to_datetime(text, format="%Y%m", errors="coerce")
+    return pd.to_datetime(text, errors="coerce")
+
+
+@dataclass(frozen=True)
+class ReferenceDates:
+    """De to datoer der afgrænser 'eksisterende kunde'-vinduet."""
+
+    today: pd.Timestamp
+    window_start: pd.Timestamp
+
+    @classmethod
+    def from_config(cls, cfg: Config) -> "ReferenceDates":
+        today = parse_month(cfg.reference_date)
+        return cls(
+            today=today,
+            window_start=today - relativedelta(months=cfg.existing_customer_months),
+        )
+
+
+# --- Indlæsning --------------------------------------------------------------
+
+
+def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
+    """
+    Læser Excel-filen, normaliserer kolonnenavne og tilføjer den parsede
+    periode-kolonne.
+    """
+    log(f"Indlæser: {path}")
+    try:
+        df = pd.read_excel(path)
+    except PermissionError as exc:
+        raise PermissionError(
+            f"Kunne ikke åbne filen: {path}\n"
+            "Mulige årsager:\n"
+            "  1) Filen er åben i Excel – luk den helt og prøv igen.\n"
+            "  2) OneDrive har filen som 'kun online'. Højreklik filen i "
+            "Stifinder og vælg 'Behold altid på denne enhed'.\n"
+            "  3) OneDrive synkroniserer lige nu – vent et øjeblik.\n"
+            "  4) Kopier filen lokalt og peg på kopien i stedet."
+        ) from exc
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Filen blev ikke fundet: {path}") from exc
+
+    df.columns = [str(c).strip() for c in df.columns]
+
+    rename_map: dict[str, str] = {}
+    missing: list[str] = []
+    for canonical in REQUIRED_COLUMNS:
+        found = find_column(df, canonical)
+        if found is None:
+            missing.append(canonical)
+        elif found != canonical:
+            rename_map[found] = canonical
+    if missing:
+        raise ValueError(
+            f"Følgende kolonner mangler i Excel-filen: {missing}\n"
+            f"Fundne kolonner: {list(df.columns)}"
+        )
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    df[PERIOD] = df[YEAR_MONTH].apply(parse_period)
+    return df
+
+
+# --- Filtrering --------------------------------------------------------------
+
+
+def _normalised(values: object) -> set[str]:
+    return {str(v).strip().lower() for v in values}  # type: ignore[union-attr]
+
+
+def apply_row_filters(df: pd.DataFrame, cfg: Config, log: Log = print) -> pd.DataFrame:
+    """
+    Fjerner de rækker der aldrig skal indgå i analysen:
+
+    1. uønskede værdier i 'Turnover type'
+    2. tomme kundegrupper
+    3. eksplicit ekskluderede kundegrupper
+    4. rækker med Turnover DKK = 0 (valgfrit)
+    """
+    if cfg.excluded_turnover_types:
+        column = find_column(df, TURNOVER_TYPE)
+        if column is None:
+            log(
+                f"BEMÆRK: Kolonnen '{TURNOVER_TYPE}' blev ikke fundet – "
+                "frasortering af turnover-typer springes over."
+            )
+        else:
+            excluded = _normalised(cfg.excluded_turnover_types)
+            before = len(df)
+            values = df[column].astype(str).str.strip().str.lower()
+            df = df[~values.isin(excluded)].copy()
+            log(
+                "Frasorterede uønskede Turnover type-værdier: fjernede "
+                f"{before - len(df)} rækker"
+            )
+
+    df = df.copy()
+    df[GROUP] = df[CUSTOMER_GROUP].astype(str).str.strip()
+    df = df[df[GROUP].ne("") & df[GROUP].str.lower().ne("nan")].copy()
+
+    if df.empty:
+        raise ValueError(
+            f"Ingen kundegrupper at plotte – tjek at '{CUSTOMER_GROUP}' har værdier."
+        )
+
+    if cfg.excluded_customer_groups:
+        excluded = {name.strip().upper() for name in cfg.excluded_customer_groups}
+        rows_before, groups_before = len(df), df[GROUP].nunique()
+        df = df[~df[GROUP].str.upper().isin(excluded)].copy()
+        log(
+            f"Ekskluderede kundegrupper: fjernede {rows_before - len(df)} rækker, "
+            f"{groups_before - df[GROUP].nunique()} kundegrupper"
+        )
+
+    if cfg.drop_zero_turnover:
+        before = len(df)
+        df = df[df[TURNOVER].fillna(0) != 0].copy()
+        log(
+            "Frasorterede rækker med Turnover DKK = 0: fjernede "
+            f"{before - len(df)} rækker"
+        )
+
+    if df.empty:
+        raise ValueError(
+            "Ingen rækker tilbage efter filtrering – tjek dine indstillinger."
+        )
+
+    log(f"Antal unikke kundegrupper: {df[GROUP].nunique()}")
+    return df
+
+
+def turnover_type_mask(
+    df: pd.DataFrame, allowed_types: list[str]
+) -> pd.Series:
+    """
+    Boolesk maske over rækker hvis 'Turnover type' står på listen.
+
+    Returnerer en helt falsk maske hvis kolonnen mangler, eller hvis listen
+    er tom, så kalderen kan behandle "ingen match" ensartet.
+    """
+    column = find_column(df, TURNOVER_TYPE)
+    if column is None or not allowed_types:
+        return pd.Series(False, index=df.index)
+    values = df[column].astype(str).str.strip().str.lower()
+    return values.isin(_normalised(allowed_types))
