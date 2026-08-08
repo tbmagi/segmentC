@@ -57,6 +57,21 @@ GRID_COLOUR = "rgba(200,200,200,0.4)"
 PLOT_WIDTH = 1200
 PLOT_HEIGHT = 750
 
+# Knaprækker under plottet. Bredden af en knap kendes først når browseren har
+# tegnet den, så den anslås ud fra etikettens længde — bevidst en anelse for
+# rundhåndet, så knapper hellere står lidt spredt end oven i hinanden.
+BUTTON_CHAR_PX = 6.5
+BUTTON_PADDING_PX = 30
+BUTTON_SPACING_PX = 10
+# Knappernes x-koordinat er i "paper"-enheder, der spænder over PLOTOMRÅDET —
+# ikke hele figuren. Området er smallere end figuren og skrumper yderligere
+# når legenden er bred (item-plottet viser kundenavne). Bredden kendes først
+# ved tegning, så her regnes med et bevidst lavt skøn: så bliver knapperne
+# hellere spredt for godt ud og ombrudt for tidligt end lagt oven i hinanden.
+BUTTON_AREA_PX = 640
+BUTTON_ROW_GAP = 0.08  # lodret afstand mellem knaprækker (paper-koordinater)
+BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
+
 
 def _danish_thousands(value: float) -> str:
     return f"{value:,.0f}".replace(",", ".")
@@ -203,6 +218,51 @@ def band_shapes(
     return shapes, annotations
 
 
+def _button_width(label: object) -> float:
+    """Anslået bredde af en knap i paper-koordinater."""
+    return (len(str(label)) * BUTTON_CHAR_PX + BUTTON_PADDING_PX) / BUTTON_AREA_PX
+
+
+def flow_button_menus(buttons: Sequence[dict], y_start: float) -> tuple[list[dict], int]:
+    """
+    Placerer én-knaps-menuer på rad og bryder til en ny række når rækken er fuld.
+
+    Hver knap får sin egen menu, fordi Plotly kun kan holde ét aktivt valg pr.
+    menu — og her skal flere kunne være trykket ned samtidig. Til gengæld skal
+    placeringen så regnes ud manuelt. Tidligere blev x-positionen lagt sammen
+    og klippet ved 0.95, hvilket stablede alle knapper oven på hinanden så
+    snart rækken var fuld. Nu ombrydes der i stedet.
+
+    Returnerer menuerne og hvor mange rækker de fylder, så kalderen kan
+    reservere plads under plottet.
+    """
+    menus: list[dict] = []
+    spacing = BUTTON_SPACING_PX / BUTTON_AREA_PX
+    x = 0.0
+    rows = 1
+    for button in buttons:
+        width = _button_width(button.get("label", ""))
+        if x > 0 and x + width > 1.0:
+            x = 0.0
+            rows += 1
+        menus.append(
+            dict(
+                type="buttons",
+                direction="right",
+                showactive=True,
+                active=-1,
+                x=x,
+                xanchor="left",
+                y=y_start - (rows - 1) * BUTTON_ROW_GAP,
+                yanchor="top",
+                pad={"r": 4, "t": 4},
+                buttons=[button],
+            )
+        )
+        x += width + spacing
+    return menus, rows
+
+
 def category_zone_shapes(cfg: Config) -> tuple[list[dict], list[dict]]:
     return band_shapes(
         cfg.category_bands, CATEGORY_COLOURS, fill_opacity=0.08, label_zones=False
@@ -233,20 +293,62 @@ def _subtitle(cfg: Config, dates: ReferenceDates, extra: str) -> str:
     return "  |  ".join(parts)
 
 
-def _axes(cfg: Config, y_title: str) -> dict:
-    return dict(
-        xaxis=dict(
-            title="Gross Margin potentiale (%)",
-            type=cfg.x_scale,
-            gridcolor=GRID_COLOUR,
-        ),
-        yaxis=dict(
-            title=y_title,
-            type=cfg.y_scale,
-            tickformat=",.0f",
-            gridcolor=GRID_COLOUR,
-        ),
+def axis_range(values: Sequence[float], log: bool, pad: float = 0.06) -> list[float] | None:
+    """
+    Beregner et akseinterval ud fra de faktiske værdier.
+
+    Uden et eksplicit interval lader Plotly zonerne bestemme udsnittet, og
+    zonerne strækker sig med vilje langt uden for data (``X_MAX_ZONE`` og
+    ``Y_MAX_ZONE``) for at nå plottets kant. Så bliver punkterne presset
+    sammen i et hjørne. Ved at sætte intervallet efter data bliver zonerne
+    beskåret i stedet — de fylder stadig baggrunden, men styrer ikke synsfeltet.
+
+    På en logaritmisk akse angives intervallet i tierpotenser, og nul og
+    negative værdier må udelades: ``log10(0)`` er minus uendelig og ville
+    trække aksen ned i det meningsløse.
+    """
+    numbers = [
+        float(v) for v in values if v is not None and not pd.isna(v) and np.isfinite(v)
+    ]
+    if log:
+        numbers = [v for v in numbers if v > 0]
+    if not numbers:
+        return None
+
+    low, high = min(numbers), max(numbers)
+    if log:
+        low, high = np.log10(low), np.log10(high)
+    span = high - low
+    if span <= 0:  # ét enkelt punkt – giv det lidt luft omkring sig
+        span = abs(high) * 0.5 or 1.0
+    margin = span * pad
+    return [low - margin, high + margin]
+
+
+def _axes(
+    cfg: Config,
+    y_title: str,
+    x_values: Sequence[float] = (),
+    y_values: Sequence[float] = (),
+) -> dict:
+    x_axis = dict(
+        title="Gross Margin potentiale (%)",
+        type=cfg.x_scale,
+        gridcolor=GRID_COLOUR,
     )
+    y_axis = dict(
+        title=y_title,
+        type=cfg.y_scale,
+        tickformat=",.0f",
+        gridcolor=GRID_COLOUR,
+    )
+    x_range = axis_range(x_values, log=cfg.x_scale == "log")
+    y_range = axis_range(y_values, log=cfg.y_scale == "log")
+    if x_range:
+        x_axis["range"] = x_range
+    if y_range:
+        y_axis["range"] = y_range
+    return dict(xaxis=x_axis, yaxis=y_axis)
 
 
 # --- Kundegruppe-plot --------------------------------------------------------
@@ -360,8 +462,8 @@ def group_scatter(
     menus: list[dict] = []
     bottom_margin = 40
     if has_industry and segments and not colour_by_segment:
-        menus = _segment_highlight_buttons(segments, trace_segments)
-        bottom_margin = 110
+        menus, button_rows = _segment_highlight_buttons(segments, trace_segments)
+        bottom_margin = 65 + button_rows * BUTTON_ROW_MARGIN_PX
 
     subtitle_extra = title_suffix
     if has_industry and not colour_by_segment:
@@ -396,6 +498,8 @@ def group_scatter(
         **_axes(
             cfg,
             f"Samlet Turnover DKK ({cfg.turnover_window_months} mdr. vindue)",
+            x_values=(data["samlet_GM"] * 100).tolist(),
+            y_values=data["samlet_turnover_window"].tolist(),
         ),
     )
     return fig
@@ -403,7 +507,7 @@ def group_scatter(
 
 def _segment_highlight_buttons(
     segments: Sequence[object], trace_segments: Sequence[pd.Series]
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     """
     Én knap pr. Industry_segment der fremhæver segmentets punkter.
 
@@ -420,7 +524,6 @@ def _segment_highlight_buttons(
     ]
 
     buttons: list[dict] = []
-    x_position = 0.0
     for segment in segments:
         highlighted = [
             [
@@ -433,27 +536,13 @@ def _segment_highlight_buttons(
         ]
         buttons.append(
             dict(
-                type="buttons",
-                direction="right",
-                showactive=True,
-                active=-1,
-                x=x_position,
-                xanchor="left",
-                y=-0.14,
-                yanchor="top",
-                pad={"r": 4, "t": 4},
-                buttons=[
-                    dict(
-                        label=str(segment),
-                        method="restyle",
-                        args=[{"marker.line.width": highlighted}, trace_indices],
-                        args2=[{"marker.line.width": base_widths}, trace_indices],
-                    )
-                ],
+                label=str(segment),
+                method="restyle",
+                args=[{"marker.line.width": highlighted}, trace_indices],
+                args2=[{"marker.line.width": base_widths}, trace_indices],
             )
         )
-        x_position = min(x_position + len(str(segment)) * 0.011 + 0.06, 0.95)
-    return buttons
+    return flow_button_menus(buttons, y_start=-0.14)
 
 
 # --- Item-plot ---------------------------------------------------------------
@@ -569,7 +658,12 @@ def item_scatter(
                 buttons=level_buttons,
             )
         )
-    menus.extend(_category_toggle_buttons(category_order, traces_by_category))
+    category_menus, category_rows = _category_toggle_buttons(
+        category_order, traces_by_category
+    )
+    menus.extend(category_menus)
+    # Plads til "Krav"-rækken plus de rækker kategori-knapperne fylder.
+    bottom_margin = 60 + (1 + category_rows) * BUTTON_ROW_MARGIN_PX
 
     fig.update_layout(
         title=dict(
@@ -582,7 +676,7 @@ def item_scatter(
         shapes=shapes,
         annotations=annotations,
         updatemenus=menus,
-        margin=dict(b=150),  # plads til de to knaprækker under plottet
+        margin=dict(b=bottom_margin),
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
             itemclick="toggle",
@@ -597,6 +691,8 @@ def item_scatter(
         **_axes(
             cfg,
             f"Turnover DKK – item niveau ({cfg.turnover_window_months} mdr. vindue)",
+            x_values=(data[ITEM_GM] * 100).tolist(),
+            y_values=data[WINDOW_ITEM].tolist(),
         ),
     )
     return fig
@@ -635,37 +731,22 @@ def _group_categories(
 
 def _category_toggle_buttons(
     category_order: Sequence[str], traces_by_category: Mapping[str, list[int]]
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     """Én knap pr. kategori-blok der viser/skjuler alle kunder i blokken."""
-    menus: list[dict] = []
-    x_position = 0.0
+    buttons: list[dict] = []
     for category in category_order:
         indices = traces_by_category[category]
         count = len(indices)
-        label = category if category != "-" else "Ingen kat."
-        menus.append(
+        buttons.append(
             dict(
-                type="buttons",
-                direction="right",
-                showactive=True,
-                active=-1,
-                x=x_position,
-                xanchor="left",
-                y=-0.22,
-                yanchor="top",
-                pad={"r": 4, "t": 4},
-                buttons=[
-                    dict(
-                        label=label,
-                        method="restyle",
-                        args=[{"visible": ["legendonly"] * count}, indices],
-                        args2=[{"visible": [True] * count}, indices],
-                    )
-                ],
+                label=category if category != "-" else "Ingen kat.",
+                method="restyle",
+                args=[{"visible": ["legendonly"] * count}, indices],
+                args2=[{"visible": [True] * count}, indices],
             )
         )
-        x_position += 0.075
-    return menus
+    # Rækken lægges under "Krav"-rækken, som altid fylder præcis én række.
+    return flow_button_menus(buttons, y_start=-0.14 - BUTTON_ROW_GAP)
 
 
 # --- Skrivning ---------------------------------------------------------------
