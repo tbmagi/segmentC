@@ -1,6 +1,7 @@
 # Kundesegmentering
 
-Læser rå salgsdata fra Excel og producerer interaktive HTML scatter-plots
+Læser rå salgsdata fra Excel (`.xlsx`, `.xlsm`, `.xls`) og producerer
+interaktive HTML scatter-plots
 (Plotly) samt en formateret Excel-rapport. Hvert punkt er enten én kundegruppe
 eller ét item no.
 
@@ -57,7 +58,7 @@ Disse er valgfrie og aktiverer hver sin funktion:
 | --- | --- |
 | `Turnover type` | frasortering og CN/DK-opdeling |
 | `Fiscal year` | identifikation af nye kunder |
-| `Industry_segment` | farve- og kantlogik på kundegruppe-plottet |
+| `Industry_segment` | kantfarve på kundegruppe-plottet, med en fremhæv-knap pr. branche |
 | `KAM` | tænd/sluk-knapper pr. key account manager på begge plots |
 
 Manglende obligatoriske kolonner giver en fejlbesked der siger præcis hvilke
@@ -84,6 +85,20 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
    uden betydning (`PHA` og `pHA` er samme person), og kunder uden KAM samles
    under `(Blank)`.
 9. **Output** – HTML-plots og Excel-rapport.
+
+## De to plots
+
+Begge plots lister punkterne i legenden til højre, grupperet efter
+kundekategori (A+, A-, B+ …). Klik på et navn slår det enkelte punkt fra;
+knapperne under plottet slår en hel blok fra:
+
+| Plot | Ét punkt er | Legenden viser | Farven følger |
+| --- | --- | --- | --- |
+| Kundegruppe | én kundegruppe | kundenavne pr. kategori | kundetype |
+| Item | ét item no. | kundenavne pr. kategori | kundegruppe |
+
+Knaprækkerne under kundegruppe-plottet er kundetype, kategori, KAM og
+branche. Under item-plottet er de volumenkrav, kategori og KAM.
 
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.

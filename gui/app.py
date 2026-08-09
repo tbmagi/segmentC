@@ -877,7 +877,11 @@ class SegmenteringApp(tk.Tk):
     def _choose_input_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Vælg input-Excel-fil",
-            filetypes=[("Excel-filer", "*.xlsx *.xls"), ("Alle filer", "*.*")],
+            filetypes=[
+                ("Excel-filer", "*.xlsx *.xlsm *.xls"),
+                ("Excel med makroer", "*.xlsm"),
+                ("Alle filer", "*.*"),
+            ],
         )
         if path:
             self.var_input_path.set(path)

@@ -180,7 +180,7 @@ class OutputPaths:
         cls, basename: str, directory: str | None, write_excel: bool
     ) -> "OutputPaths":
         base = (basename or "kunde_segmentering").strip()
-        for extension in (".html", ".xlsx", ".xls"):
+        for extension in (".html", ".xlsx", ".xlsm", ".xls"):
             if base.lower().endswith(extension):
                 base = base[: -len(extension)]
                 break

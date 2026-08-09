@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from segmentering.config import Config
-from segmentering.dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, ReferenceDates
+from segmentering.config import CUSTOMER_TYPE_COLOURS, Config
+from segmentering.dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
 from segmentering.metrics import (
     GP_SUM,
     ITEM_GM,
@@ -121,6 +121,117 @@ def sample_items():
     )
 
 
+def groups_with_categories():
+    """Fire kunder fordelt på to kategorier, to kundetyper og to KAM'er."""
+    rows = [
+        ("KUNDE A", 0.30, 9_000_000, "Eksisterende", "A+", "Automotive", "PHA"),
+        ("KUNDE B", 0.10, 9_000_000, "Ny", "A-", "Medico", "TSP"),
+        ("KUNDE C", 0.30, 3_000_000, "Eksisterende", "B+", "Automotive", "PHA"),
+        ("KUNDE D", 0.10, 3_000_000, "Tidligere", "B-", None, "(Blank)"),
+    ]
+    return pd.DataFrame(
+        [
+            {
+                GROUP: name,
+                "samlet_GM": gm,
+                "samlet_turnover_window": turnover,
+                "samlet_turnover": turnover,
+                "samlet_GP": turnover * gm,
+                "Kundetype": kundetype,
+                "Kundekategori": category,
+                INDUSTRY_SEGMENT: segment,
+                KAM: kam,
+            }
+            for name, gm, turnover, kundetype, category, segment, kam in rows
+        ]
+    )
+
+
+def button_rows(fig):
+    """Overskrifterne på knaprækkerne, i den rækkefølge de står."""
+    return [
+        a.text for a in fig.layout.annotations if a.text and a.text.endswith(":")
+    ]
+
+
+def test_group_plot_has_one_trace_per_customer():
+    """
+    Legenden skal kunne liste kunderne ved navn, og det kræver ét spor pr.
+    kunde — ikke ét pr. kundetype.
+    """
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert len(fig.data) == 4
+    assert {t.name for t in fig.data} == {"KUNDE A", "KUNDE B", "KUNDE C", "KUNDE D"}
+
+
+def test_customers_are_grouped_by_category_in_the_legend():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    by_name = {t.name: t for t in fig.data}
+    assert by_name["KUNDE A"].legendgroup == "A+"
+    assert by_name["KUNDE A"].legendgrouptitle.text == "Kategori A+"
+    assert by_name["KUNDE D"].legendgroup == "B-"
+
+
+def test_categories_are_ordered_a_plus_a_minus_b_plus():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert [t.legendgroup for t in fig.data] == ["A+", "A-", "B+", "B-"]
+
+
+def test_colour_still_follows_the_customer_type():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    by_name = {t.name: t for t in fig.data}
+    assert by_name["KUNDE A"].marker.color == CUSTOMER_TYPE_COLOURS["Eksisterende"]
+    assert by_name["KUNDE B"].marker.color == CUSTOMER_TYPE_COLOURS["Ny"]
+    assert by_name["KUNDE D"].marker.color == CUSTOMER_TYPE_COLOURS["Tidligere"]
+
+
+def test_customer_type_is_toggled_with_buttons_not_the_legend():
+    """
+    Legenden viser nu kunder, så Eksisterende/Ny/Tidligere skal have sin egen
+    knaprække i stedet.
+    """
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert "Vis/skjul kundetype:" in button_rows(fig)
+    labels = [m.buttons[0].label for m in fig.layout.updatemenus]
+    assert {"Eksisterende", "Ny", "Tidligere"} <= set(labels)
+
+
+def test_the_group_plot_has_the_same_button_rows_as_expected():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert button_rows(fig) == [
+        "Vis/skjul kundetype:",
+        "Vis/skjul kategori:",
+        "Vis/skjul KAM:",
+        "Fremhæv branche:",
+    ]
+
+
+def test_category_buttons_hide_exactly_their_own_customers():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    button = next(
+        m.buttons[0] for m in fig.layout.updatemenus if m.buttons[0].label == "A+"
+    )
+    assert list(button.args[1]) == [0]  # kun KUNDE A ligger i A+
+
+
+def test_customer_type_buttons_span_every_category():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    button = next(
+        m.buttons[0]
+        for m in fig.layout.updatemenus
+        if m.buttons[0].label == "Eksisterende"
+    )
+    assert list(button.args[1]) == [0, 2]  # KUNDE A (A+) og KUNDE C (B+)
+
+
+def test_a_customer_without_a_category_still_gets_a_legend_group():
+    frame = groups_with_categories()
+    frame.loc[0, "Kundekategori"] = "-"
+    fig = group_scatter(frame, Config(), DATES)
+    by_name = {t.name: t for t in fig.data}
+    assert by_name["KUNDE A"].legendgrouptitle.text == "Kategori Ingen kategori"
+
+
 def test_the_x_axis_is_labelled_the_same_on_both_plots():
     group = group_scatter(sample_groups(), Config(), DATES)
     item = item_scatter(sample_items(), Config(), DATES)
@@ -226,11 +337,24 @@ def test_toggle_buttons_carry_the_binding_guard():
 
 
 def test_highlight_buttons_carry_the_binding_guard():
-    segments = ["Automotive", "Medico"]
-    trace_segments = [pd.Series(["Automotive", "Medico"])]
-    for button in _segment_highlight_buttons(segments, trace_segments):
+    # Ét spor pr. kunde, så hvert spor har præcis ét segment.
+    buttons = _segment_highlight_buttons(
+        ["Automotive", "Medico"], ["Automotive", "Medico", None]
+    )
+    assert len(buttons) == 2
+    for button in buttons:
         for slot in ("args", "args2"):
             assert len(button[slot][0]) > 1
+
+
+def test_highlight_only_thickens_the_chosen_segment():
+    buttons = _segment_highlight_buttons(
+        ["Automotive", "Medico"], ["Automotive", "Medico", None]
+    )
+    automotive = next(b for b in buttons if b["label"] == "Automotive")
+    widths = automotive["args"][0]["marker.line.width"]
+    assert widths[0] > widths[1], "kun det valgte segment skal fremhæves"
+    assert widths[2] == pytest.approx(0.5), "kunder uden segment får tynd kant"
 
 
 def test_the_guard_does_not_disturb_the_markers():

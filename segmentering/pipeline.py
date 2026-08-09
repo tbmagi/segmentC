@@ -17,6 +17,7 @@ plottet altid til de Excel-faner der hører til samme udsnit.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -306,6 +307,18 @@ def run_analysis(cfg: Config, log: Log = print) -> list[SegmentResult]:
     så beskederne havner i log-vinduet uden at der skal omdirigeres stdout.
     """
     cfg.validate()
+
+    # Output-mappen oprettes hvis den mangler. Ellers ville kørslen først bryde
+    # sammen langt inde i forløbet, når det første plot skulle skrives.
+    directory = cfg.paths.directory
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(
+            f"Kunne ikke oprette output-mappen:\n{directory}\n\n"
+            f"Årsag: {exc.strerror or exc}\n"
+            "Vælg en anden mappe, eller kontrollér at du har skriveadgang."
+        ) from exc
 
     df = load_sales_data(cfg.input_path, log)
     dates = ReferenceDates.from_config(cfg)

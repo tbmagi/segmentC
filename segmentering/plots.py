@@ -467,13 +467,13 @@ def group_scatter(
     """
     Tegner kundegruppe-plottet: ét punkt pr. kundegruppe.
 
-    Med ``colour_by="kundetype"`` farves punkterne efter Eksisterende/Ny/
-    Tidligere, og Industry_segment vises som kantfarve med en knap pr. segment
-    til at fremhæve det. Med ``colour_by="industry_segment"`` farves punkterne
-    i stedet direkte efter segment.
+    Der laves ét spor pr. kunde, så legenden til højre kan liste kunderne ved
+    navn under deres kundekategori — ligesom på item-plottet. Dermed kan en
+    enkelt kunde slås fra ved at klikke i legenden.
 
-    Der oprettes ét spor pr. farvekategori — ikke ét pr. kunde — så figuren
-    holder sig lille og hurtig at åbne, uanset hvor mange kunder der er.
+    Farven følger kundetypen (Eksisterende / Ny / Tidligere), eller
+    Industry_segment hvis ``colour_by="industry_segment"``. Kundetype,
+    kategori og KAM tændes og slukkes med knapperne under plottet.
     """
     data = per_group.copy()
     has_industry = (
@@ -484,120 +484,106 @@ def group_scatter(
         if has_industry
         else []
     )
-
-    colour_by_segment = cfg.colour_by == "industry_segment"
-    if colour_by_segment and not has_industry:
-        colour_by_segment = False
-
-    if colour_by_segment:
-        groups = segments
-        column = INDUSTRY_SEGMENT
-        colours = _colour_map(segments)
-        legend_title = "Industry segment (klik for til/fravælg)"
-    else:
-        groups = [t for t in CUSTOMER_TYPE_ORDER if (data["Kundetype"] == t).any()]
-        column = "Kundetype"
-        colours = CUSTOMER_TYPE_COLOURS
-        legend_title = "Kundetype (klik for til/fravælg)"
-
     segment_colours = _colour_map(segments) if has_industry else {}
+    colour_by_segment = cfg.colour_by == "industry_segment" and has_industry
 
     has_kam = KAM in data.columns and data[KAM].notna().any()
     kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
 
+    # Samme rækkefølge som item-plottet: kategori-blok først, derefter de
+    # største kunder øverst inden for blokken.
+    ordered = data.sort_values("samlet_turnover_window", ascending=False)
+    ordered = ordered.iloc[
+        sorted(
+            range(len(ordered)),
+            key=lambda i: category_sort_key(
+                str(ordered.iloc[i].get("Kundekategori") or "-")
+            ),
+        )
+    ]
+
     fig = go.Figure()
-    trace_segments: list[pd.Series] = []
+    category_order: list[str] = []
+    trace_categories: list[str] = []
+    trace_types: list[object] = []
     trace_kams: list[object] = []
+    trace_segments: list[object] = []
 
-    for name in groups:
-        whole_block = data[data[column] == name]
-        if whole_block.empty:
-            continue
-        whole_block = whole_block.sort_values("samlet_turnover_window", ascending=False)
+    for row in ordered.to_dict("records"):
+        name = row[GROUP]
+        category = str(row.get("Kundekategori") or "-")
+        label = category if category != "-" else "Ingen kategori"
+        if category not in category_order:
+            category_order.append(category)
 
-        # Sporene deles yderligere op pr. KAM, så en KAM-knap kan slukke for
-        # præcis sine kunder. Kun det første spor i hver farvekategori kommer i
-        # legenden, så den stadig viser én linje pr. kundetype.
-        first_in_group = True
-        for kam, block in _split_by_kam(whole_block, has_kam, kam_values):
-            trace_kams.append(kam)
-            show_in_legend = first_in_group
-            first_in_group = False
+        customer_type = row.get("Kundetype")
+        segment = row.get(INDUSTRY_SEGMENT)
+        segment = segment if pd.notna(segment) else None
+        kam = row.get(KAM) if has_kam else None
+        kam = kam if kam is not None and pd.notna(kam) else None
 
-            if colour_by_segment or not has_industry:
-                edge_colours = EDGE_COLOUR_PLAIN
-                edge_widths = EDGE_WIDTH_PLAIN
+        trace_categories.append(category)
+        trace_types.append(customer_type)
+        trace_segments.append(segment)
+        trace_kams.append(kam)
+
+        if colour_by_segment:
+            colour = segment_colours.get(segment, "#7f7f7f")
+            edge_colour, edge_width = EDGE_COLOUR_PLAIN, EDGE_WIDTH_PLAIN
+        else:
+            colour = CUSTOMER_TYPE_COLOURS.get(customer_type, "#7f7f7f")
+            if segment is not None:
+                edge_colour = segment_colours.get(segment, EDGE_COLOUR_PLAIN)
+                edge_width = EDGE_WIDTH_BASE
             else:
-                edge_colours = [
-                    segment_colours.get(segment, EDGE_COLOUR_PLAIN)
-                    if pd.notna(segment)
-                    else EDGE_COLOUR_PLAIN
-                    for segment in block[INDUSTRY_SEGMENT]
-                ]
-                edge_widths = [
-                    EDGE_WIDTH_BASE if pd.notna(segment) else EDGE_WIDTH_PLAIN
-                    for segment in block[INDUSTRY_SEGMENT]
-                ]
+                edge_colour, edge_width = EDGE_COLOUR_PLAIN, EDGE_WIDTH_PLAIN
 
-            trace_segments.append(
-                block[INDUSTRY_SEGMENT]
-                if has_industry
-                else pd.Series([None] * len(block), index=block.index)
-            )
+        # Ét punkt pr. spor, så hover-teksten kan skrives færdig med det samme.
+        hover = [
+            f"<b>{name}</b>",
+            "GM%: %{x:.1f}%",
+            "Turnover: %{y:,.0f} DKK",
+            f"Kundetype: {customer_type}",
+            f"Kategori: {category}",
+        ]
+        if segment is not None:
+            hover.append(f"Industry segment: {segment}")
+        if kam is not None:
+            hover.append(f"KAM: {kam}")
 
-            hover_columns = ["Kundetype", "Kundekategori", INDUSTRY_SEGMENT, KAM]
-            hover_columns = [c for c in hover_columns if c in block.columns]
-            hover_data = (
-                block[hover_columns]
-                .astype(object)
-                .where(block[hover_columns].notna(), "")
-                .values
+        fig.add_trace(
+            go.Scatter(
+                x=[row["samlet_GM"] * 100],
+                y=[row["samlet_turnover_window"]],
+                mode="markers+text",
+                name=str(name),
+                legendgroup=category,
+                legendgrouptitle_text=f"Kategori {label}",
+                text=[str(name)],
+                textposition="top right",
+                textfont=dict(size=9),
+                marker=dict(
+                    size=10,
+                    color=colour,
+                    line=dict(color=edge_colour, width=edge_width),
+                ),
+                hovertemplate="<br>".join(hover) + "<extra></extra>",
             )
-            hover_lines = {
-                "Kundetype": "Kundetype: %{customdata[IDX]}<br>",
-                "Kundekategori": "Kategori: %{customdata[IDX]}<br>",
-                INDUSTRY_SEGMENT: "Industry segment: %{customdata[IDX]}<br>",
-                KAM: "KAM: %{customdata[IDX]}<br>",
-            }
-            hovertemplate = (
-                "<b>%{text}</b><br>GM%: %{x:.1f}%<br>Turnover: %{y:,.0f} DKK<br>"
-                + "".join(
-                    hover_lines[c].replace("IDX", str(i))
-                    for i, c in enumerate(hover_columns)
-                )
-                + "<extra></extra>"
-            )
-
-            fig.add_trace(
-                go.Scatter(
-                    x=block["samlet_GM"] * 100,
-                    y=block["samlet_turnover_window"],
-                    mode="markers+text",
-                    name=str(name),
-                    legendgroup=str(name),
-                    showlegend=show_in_legend,
-                    text=block[GROUP],
-                    textposition="top right",
-                    textfont=dict(size=9),
-                    marker=dict(
-                        size=9,
-                        color=colours.get(name, "#7f7f7f"),
-                        line=dict(color=edge_colours, width=edge_widths),
-                    ),
-                    customdata=hover_data,
-                    hovertemplate=hovertemplate,
-                )
-            )
+        )
 
     shapes, annotations = category_zone_shapes(cfg)
 
-    button_groups: list[tuple[str, list[dict]]] = []
+    types_present = [t for t in CUSTOMER_TYPE_ORDER if t in trace_types]
+    button_groups: list[tuple[str, list[dict]]] = [
+        ("Vis/skjul kundetype:", toggle_buttons(types_present, trace_types)),
+        ("Vis/skjul kategori:", toggle_buttons(category_order, trace_categories)),
+    ]
+    if has_kam and kam_values:
+        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
     if has_industry and segments and not colour_by_segment:
         button_groups.append(
             ("Fremhæv branche:", _segment_highlight_buttons(segments, trace_segments))
         )
-    if has_kam and kam_values:
-        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
 
     menus, row_labels, button_rows = stack_button_rows(button_groups, y_start=-0.14)
     annotations = annotations + row_labels
@@ -605,10 +591,8 @@ def group_scatter(
 
     subtitle_extra = title_suffix
     if has_industry and not colour_by_segment:
-        subtitle_extra = (
-            f"{subtitle_extra}  |  Kant = Industry segment"
-            if subtitle_extra
-            else "Kant = Industry segment"
+        subtitle_extra = "  |  ".join(
+            part for part in (subtitle_extra, "Kant = Industry segment") if part
         )
 
     fig.update_layout(
@@ -623,10 +607,11 @@ def group_scatter(
         annotations=annotations,
         updatemenus=menus,
         legend=dict(
-            title=legend_title,
+            title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
             itemclick="toggle",
             itemdoubleclick="toggleothers",
-            tracegroupgap=4,
+            groupclick="toggleitem",
+            tracegroupgap=8,
         ),
         hovermode="closest",
         plot_bgcolor="white",
@@ -643,59 +628,29 @@ def group_scatter(
     return fig
 
 
-def _split_by_kam(
-    block: pd.DataFrame, has_kam: bool, kam_values: Sequence[object]
-) -> "list[tuple[object, pd.DataFrame]]":
-    """
-    Deler et udsnit op i ét stykke pr. KAM.
-
-    Rækker uden KAM samles til sidst under ``None``, så de stadig tegnes —
-    de kan bare ikke slukkes med en KAM-knap.
-    """
-    if not has_kam:
-        return [(None, block)]
-    parts: list[tuple[object, pd.DataFrame]] = []
-    for kam in kam_values:
-        subset = block[block[KAM] == kam]
-        if not subset.empty:
-            parts.append((kam, subset))
-    without = block[block[KAM].isna()]
-    if not without.empty:
-        parts.append((None, without))
-    return parts
-
-
 def _segment_highlight_buttons(
-    segments: Sequence[object], trace_segments: Sequence[pd.Series]
+    segments: Sequence[object], trace_segments: Sequence[object]
 ) -> list[dict]:
     """
     Én knap pr. Industry_segment der fremhæver segmentets punkter.
 
-    Knapperne arbejder på kantbredden. Fordi hvert spor dækker mange kunder,
-    sender hver knap et helt bredde-array pr. spor frem for én værdi.
+    Knapperne arbejder på kantbredden. Hvert spor er én kunde med ét segment,
+    så hver knap sender blot én bredde pr. spor.
     """
     trace_indices = list(range(len(trace_segments)))
+    guard_attribute, guard_value = TOGGLE_GUARD
+    guard = [guard_value] * len(trace_indices)
     base_widths = [
-        [
-            EDGE_WIDTH_BASE if pd.notna(segment) else EDGE_WIDTH_PLAIN
-            for segment in values
-        ]
-        for values in trace_segments
+        EDGE_WIDTH_BASE if segment is not None else EDGE_WIDTH_PLAIN
+        for segment in trace_segments
     ]
 
     buttons: list[dict] = []
     for segment in segments:
         highlighted = [
-            [
-                EDGE_WIDTH_HIGHLIGHT
-                if value == segment
-                else (EDGE_WIDTH_BASE if pd.notna(value) else EDGE_WIDTH_PLAIN)
-                for value in values
-            ]
-            for values in trace_segments
+            EDGE_WIDTH_HIGHLIGHT if value == segment else base
+            for value, base in zip(trace_segments, base_widths)
         ]
-        guard_attribute, guard_value = TOGGLE_GUARD
-        guard = [guard_value] * len(trace_indices)
         buttons.append(
             dict(
                 label=str(segment),
