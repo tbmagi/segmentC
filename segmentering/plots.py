@@ -72,6 +72,19 @@ BUTTON_AREA_PX = 640
 BUTTON_ROW_GAP = 0.08  # lodret afstand mellem knaprækker (paper-koordinater)
 BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
 
+# Binder alle knapper i en menu sig til ÉN egenskab, opfatter Plotly det som en
+# "simpel binding" og sætter en overvåger på egenskaben. Overvågeren retter
+# menuens aktiv-markering hver gang egenskaben ændrer sig — også når det var en
+# anden knap der ændrede den. Med kategori- og KAM-knapper, der begge styrer
+# 'visible' på overlappende spor, betød det at en KAM-knap kunne få en
+# kategori-knap til at lyse op af sig selv, og at knappen hoppede et par
+# pixels til siden ved den ekstra gentegning.
+#
+# Ved at sætte én egenskab mere bliver bindingen ikke længere simpel, og
+# overvågeren droppes. Værdien er den samme som sporene allerede har, så den
+# ændrer intet visuelt — den er der kun for at bryde bindingen.
+TOGGLE_GUARD = ("marker.opacity", 1)
+
 
 def _danish_thousands(value: float) -> str:
     return f"{value:,.0f}".replace(",", ".")
@@ -252,7 +265,11 @@ def toggle_buttons(
     Knappen skjuler alle spor hvis værdi matcher, og viser dem igen ved næste
     klik. Kræver at plottet er opdelt i spor pr. værdi — ellers kan et helt
     spor ikke slukkes uden at tage andre punkter med.
+
+    Hver knap sætter ``TOGGLE_GUARD`` med, så Plotly ikke begynder at styre
+    knappens aktiv-markering på egen hånd. Se forklaringen ved konstanten.
     """
+    guard_attribute, guard_value = TOGGLE_GUARD
     buttons: list[dict] = []
     for value in values:
         indices = [i for i, v in enumerate(trace_values) if v == value]
@@ -263,8 +280,20 @@ def toggle_buttons(
             dict(
                 label=str(value),
                 method="restyle",
-                args=[{"visible": ["legendonly"] * count}, indices],
-                args2=[{"visible": [True] * count}, indices],
+                args=[
+                    {
+                        "visible": ["legendonly"] * count,
+                        guard_attribute: [guard_value] * count,
+                    },
+                    indices,
+                ],
+                args2=[
+                    {
+                        "visible": [True] * count,
+                        guard_attribute: [guard_value] * count,
+                    },
+                    indices,
+                ],
             )
         )
     return buttons
@@ -665,12 +694,20 @@ def _segment_highlight_buttons(
             ]
             for values in trace_segments
         ]
+        guard_attribute, guard_value = TOGGLE_GUARD
+        guard = [guard_value] * len(trace_indices)
         buttons.append(
             dict(
                 label=str(segment),
                 method="restyle",
-                args=[{"marker.line.width": highlighted}, trace_indices],
-                args2=[{"marker.line.width": base_widths}, trace_indices],
+                args=[
+                    {"marker.line.width": highlighted, guard_attribute: guard},
+                    trace_indices,
+                ],
+                args2=[
+                    {"marker.line.width": base_widths, guard_attribute: guard},
+                    trace_indices,
+                ],
             )
         )
     return buttons

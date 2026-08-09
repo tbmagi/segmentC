@@ -15,12 +15,15 @@ from segmentering.metrics import (
 )
 from segmentering.plots import (
     BUTTON_ROW_GAP,
+    TOGGLE_GUARD,
     X_MAX_ZONE,
     Y_MAX_ZONE,
+    _segment_highlight_buttons,
     axis_range,
     flow_button_menus,
     group_scatter,
     item_scatter,
+    toggle_buttons,
 )
 
 DATES = ReferenceDates(
@@ -182,6 +185,52 @@ def test_rows_are_stacked_downwards():
     assert ys[0] == pytest.approx(-0.14)
     for earlier, later in zip(ys, ys[1:]):
         assert earlier - later == pytest.approx(BUTTON_ROW_GAP)
+
+
+def test_toggle_buttons_hide_and_show_the_matching_traces():
+    buttons = toggle_buttons(["Anders", "Mette"], ["Anders", "Mette", "Anders"])
+    anders = next(b for b in buttons if b["label"] == "Anders")
+    assert anders["args"][1] == [0, 2]
+    assert anders["args"][0]["visible"] == ["legendonly", "legendonly"]
+    assert anders["args2"][0]["visible"] == [True, True]
+
+
+def test_a_value_without_traces_gets_no_button():
+    assert toggle_buttons(["Anders", "Ukendt"], ["Anders"]) == [
+        b for b in toggle_buttons(["Anders", "Ukendt"], ["Anders"]) if b["label"] == "Anders"
+    ]
+    assert len(toggle_buttons(["Anders", "Ukendt"], ["Anders"])) == 1
+
+
+def test_toggle_buttons_carry_the_binding_guard():
+    """
+    Plotly overvåger menuer hvis knapper binder sig til ÉN egenskab og retter
+    så deres aktiv-markering, når egenskaben ændres af nogen som helst. Med
+    kategori- og KAM-knapper på de samme spor fik en KAM-knap en kategori-knap
+    til at lyse op af sig selv — og knappen hoppede til siden ved gentegningen.
+    Den ekstra egenskab bryder bindingen. Fjernes den, kommer fejlen igen.
+    """
+    guard_attribute, guard_value = TOGGLE_GUARD
+    for button in toggle_buttons(["Anders"], ["Anders", "Anders"]):
+        for slot in ("args", "args2"):
+            spec = button[slot][0]
+            assert len(spec) > 1, "bindingen skal ramme mere end én egenskab"
+            assert spec[guard_attribute] == [guard_value] * len(button[slot][1])
+
+
+def test_highlight_buttons_carry_the_binding_guard():
+    segments = ["Automotive", "Medico"]
+    trace_segments = [pd.Series(["Automotive", "Medico"])]
+    for button in _segment_highlight_buttons(segments, trace_segments):
+        for slot in ("args", "args2"):
+            assert len(button[slot][0]) > 1
+
+
+def test_the_guard_does_not_disturb_the_markers():
+    """Vagt-egenskaben skal sætte den værdi sporene allerede har."""
+    attribute, value = TOGGLE_GUARD
+    assert attribute == "marker.opacity"
+    assert value == 1  # Plotlys standard – ændrer intet visuelt
 
 
 def test_a_short_list_stays_on_one_row():
