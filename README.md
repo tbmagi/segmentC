@@ -100,6 +100,15 @@ knapperne under plottet slår en hel blok fra:
 Knaprækkerne under kundegruppe-plottet er kundetype, kategori, KAM og
 branche. Under item-plottet er de volumenkrav, kategori og KAM.
 
+Knaprækkerne virker som **filtre der begrænser hinanden**, ikke som
+uafhængige kontakter. Har du slået alt fra på nær én KAM, og slukker og
+tænder du så for en kundetype, kommer kun den ene KAMs kunder tilbage — ikke
+alle kunder af den type. Et punkt vises kun hvis det slipper gennem hver
+eneste række.
+
+Bemærk at et klik i legenden er et engangsvalg: næste gang du rører en
+filterknap, beregnes synligheden forfra ud fra knapperne alene.
+
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.
 

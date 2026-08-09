@@ -75,14 +75,15 @@ BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
 # Binder alle knapper i en menu sig til ÉN egenskab, opfatter Plotly det som en
 # "simpel binding" og sætter en overvåger på egenskaben. Overvågeren retter
 # menuens aktiv-markering hver gang egenskaben ændrer sig — også når det var en
-# anden knap der ændrede den. Med kategori- og KAM-knapper, der begge styrer
-# 'visible' på overlappende spor, betød det at en KAM-knap kunne få en
-# kategori-knap til at lyse op af sig selv, og at knappen hoppede et par
-# pixels til siden ved den ekstra gentegning.
+# anden knap der ændrede den, hvilket både fik knapper til at lyse op af sig
+# selv og til at hoppe et par pixels til siden ved den ekstra gentegning.
 #
 # Ved at sætte én egenskab mere bliver bindingen ikke længere simpel, og
 # overvågeren droppes. Værdien er den samme som sporene allerede har, så den
 # ændrer intet visuelt — den er der kun for at bryde bindingen.
+#
+# Filterknapperne bruger nu ``method="skip"`` og binder sig slet ikke, så det
+# er kun fremhæv-knapperne der har brug for vagten.
 TOGGLE_GUARD = ("marker.opacity", 1)
 
 
@@ -260,69 +261,123 @@ def toggle_buttons(
     values: Sequence[object], trace_values: Sequence[object]
 ) -> list[dict]:
     """
-    Bygger én tænd/sluk-knap pr. værdi.
+    Bygger én filterknap pr. værdi.
 
-    Knappen skjuler alle spor hvis værdi matcher, og viser dem igen ved næste
-    klik. Kræver at plottet er opdelt i spor pr. værdi — ellers kan et helt
-    spor ikke slukkes uden at tage andre punkter med.
+    Knapperne ændrer ikke selv noget: de bruger ``method="skip"``, så Plotly
+    kun holder styr på om knappen er trykket ned. Synligheden beregnes bagefter
+    af scriptet i :func:`filter_script`, som fællesmængden af alle rækker.
 
-    Hver knap sætter ``TOGGLE_GUARD`` med, så Plotly ikke begynder at styre
-    knappens aktiv-markering på egen hånd. Se forklaringen ved konstanten.
+    Grunden er, at en knap ellers ikke kan andet end at sætte en fast værdi.
+    Med ``visible=True`` på hver sin knap ville "vis Tidligere igen" tænde for
+    ALLE tidligere kunder — også dem en KAM-knap havde slået fra. Ved at lade
+    knapperne beskrive et filter og regne synligheden ud til sidst, kan
+    rækkerne begrænse hinanden i stedet for at overskrive hinanden.
+
+    Værdier uden spor får ingen knap.
     """
-    guard_attribute, guard_value = TOGGLE_GUARD
-    buttons: list[dict] = []
-    for value in values:
-        indices = [i for i, v in enumerate(trace_values) if v == value]
-        if not indices:
-            continue
-        count = len(indices)
-        buttons.append(
-            dict(
-                label=str(value),
-                method="restyle",
-                args=[
-                    {
-                        "visible": ["legendonly"] * count,
-                        guard_attribute: [guard_value] * count,
-                    },
-                    indices,
-                ],
-                args2=[
-                    {
-                        "visible": [True] * count,
-                        guard_attribute: [guard_value] * count,
-                    },
-                    indices,
-                ],
-            )
-        )
-    return buttons
+    present = [
+        value for value in values if any(other == value for other in trace_values)
+    ]
+    return [
+        dict(label=str(value), method="skip", args=[{}], args2=[{}])
+        for value in present
+    ]
+
+
+#: JavaScript der lægges ind i den færdige HTML-fil. Det lytter efter klik på
+#: filterknapperne og sætter synligheden ud fra ALLE rækker under ét.
+_FILTER_SCRIPT = """
+(function () {
+  var gd = document.getElementById('{plot_id}');
+  if (!gd) { return; }
+  var dimensionByMenu = ((gd.layout && gd.layout.meta) || {}).filters || {};
+  if (!Object.keys(dimensionByMenu).length) { return; }
+
+  function apply() {
+    var menus = (gd._fullLayout && gd._fullLayout.updatemenus)
+                || (gd.layout && gd.layout.updatemenus) || [];
+    // Saml de fravalgte værdier pr. række (kundetype, kategori, KAM ...).
+    var deselected = {};
+    Object.keys(dimensionByMenu).forEach(function (index) {
+      var menu = menus[Number(index)];
+      if (!menu || !menu.buttons || !menu.buttons.length) { return; }
+      var dimension = dimensionByMenu[index];
+      if (!deselected[dimension]) { deselected[dimension] = []; }
+      if (menu.active === 0) {
+        deselected[dimension].push(String(menu.buttons[0].label));
+      }
+    });
+    // Et punkt vises kun hvis det slipper gennem hver eneste række.
+    var visible = gd.data.map(function (trace) {
+      var values = trace.meta || {};
+      for (var dimension in deselected) {
+        if (deselected[dimension].indexOf(String(values[dimension])) !== -1) {
+          return 'legendonly';
+        }
+      }
+      return true;
+    });
+    Plotly.restyle(gd, {visible: visible});
+  }
+
+  gd.on('plotly_buttonclicked', function () { setTimeout(apply, 0); });
+})();
+"""
+
+
+def filter_script(fig: "go.Figure") -> str | None:
+    """Returnerer filter-scriptet hvis figuren har filterknapper."""
+    meta = fig.layout.meta or {}
+    return _FILTER_SCRIPT if meta.get("filters") else None
 
 
 def stack_button_rows(
-    groups: Sequence[tuple[str, list[dict]]], y_start: float
-) -> tuple[list[dict], list[dict], int]:
+    groups: Sequence[tuple[str, str | None, list[dict]]], y_start: float
+) -> tuple[list[dict], list[dict], int, list[str | None]]:
     """
     Lægger flere navngivne knapgrupper under hinanden.
 
-    Returnerer menuerne, overskrifterne til hver række og det samlede antal
-    rækker, så kalderen kan reservere plads under plottet.
+    Hver gruppe er ``(overskrift, filterrække, knapper)``. Filterrækken er
+    navnet på den dimension knapperne filtrerer på — ``None`` for rækker der
+    ikke er filtre, fx "Fremhæv branche".
+
+    Returnerer menuerne, rækkeoverskrifterne, det samlede antal rækker og en
+    liste med filterrækken for hver menu, så kalderen kan fortælle scriptet
+    hvilken menu der hører til hvilken dimension.
     """
     menus: list[dict] = []
     annotations: list[dict] = []
+    dimensions: list[str | None] = []
     y = y_start
     total_rows = 0
-    for label, buttons in groups:
+    for label, dimension, buttons in groups:
         if not buttons:
             continue
         row_menus, rows = flow_button_menus(
             buttons, y_start=y, x_offset=_label_width(label)
         )
         menus.extend(row_menus)
+        dimensions.extend([dimension] * len(row_menus))
         annotations.append(_row_label(label, y))
         y -= rows * BUTTON_ROW_GAP
         total_rows += rows
-    return menus, annotations, total_rows
+    return menus, annotations, total_rows, dimensions
+
+
+def filter_metadata(dimensions: Sequence[str | None]) -> dict:
+    """
+    Oversætter menu-rækkefølgen til det opslag scriptet skal bruge.
+
+    Nøglen er menuens plads i ``updatemenus``; værdien er dimensionen.
+    Menuer uden dimension udelades.
+    """
+    return {
+        "filters": {
+            str(index): dimension
+            for index, dimension in enumerate(dimensions)
+            if dimension
+        }
+    }
 
 
 def flow_button_menus(
@@ -562,6 +617,11 @@ def group_scatter(
                 text=[str(name)],
                 textposition="top right",
                 textfont=dict(size=9),
+                meta={
+                    "kundetype": customer_type,
+                    "kategori": category,
+                    "kam": kam,
+                },
                 marker=dict(
                     size=10,
                     color=colour,
@@ -574,18 +634,26 @@ def group_scatter(
     shapes, annotations = category_zone_shapes(cfg)
 
     types_present = [t for t in CUSTOMER_TYPE_ORDER if t in trace_types]
-    button_groups: list[tuple[str, list[dict]]] = [
-        ("Vis/skjul kundetype:", toggle_buttons(types_present, trace_types)),
-        ("Vis/skjul kategori:", toggle_buttons(category_order, trace_categories)),
+    button_groups: list[tuple[str, str | None, list[dict]]] = [
+        ("Vis/skjul kundetype:", "kundetype", toggle_buttons(types_present, trace_types)),
+        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
     if has_kam and kam_values:
-        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
+        button_groups.append(
+            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+        )
     if has_industry and segments and not colour_by_segment:
         button_groups.append(
-            ("Fremhæv branche:", _segment_highlight_buttons(segments, trace_segments))
+            (
+                "Fremhæv branche:",
+                None,  # fremhæver kun, filtrerer ikke
+                _segment_highlight_buttons(segments, trace_segments),
+            )
         )
 
-    menus, row_labels, button_rows = stack_button_rows(button_groups, y_start=-0.14)
+    menus, row_labels, button_rows, dimensions = stack_button_rows(
+        button_groups, y_start=-0.14
+    )
     annotations = annotations + row_labels
     bottom_margin = 40 if not button_rows else 65 + button_rows * BUTTON_ROW_MARGIN_PX
 
@@ -606,6 +674,7 @@ def group_scatter(
         shapes=shapes,
         annotations=annotations,
         updatemenus=menus,
+        meta=filter_metadata(dimensions),
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
             itemclick="toggle",
@@ -735,6 +804,7 @@ def item_scatter(
                 text=block[ITEM_NO].astype(str),
                 textposition="top right",
                 textfont=dict(size=8),
+                meta={"kategori": category, "kam": kam},
                 marker=dict(
                     size=7,
                     color=group_colours[name],
@@ -766,13 +836,17 @@ def item_scatter(
     # til sidst KAM.
     level_label = "Volumenkrav:"
     below_levels = -0.14 - BUTTON_ROW_GAP
-    button_groups: list[tuple[str, list[dict]]] = [
-        ("Vis/skjul kategori:", toggle_buttons(category_order, trace_categories))
+    button_groups: list[tuple[str, str | None, list[dict]]] = [
+        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories))
     ]
     if has_kam and kam_values:
-        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
+        button_groups.append(
+            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+        )
 
-    menus_below, row_labels, rows_below = stack_button_rows(button_groups, below_levels)
+    menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(
+        button_groups, below_levels
+    )
 
     # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
     # udskifter hele annotations-listen, så uden dem forsvandt rækkernes
@@ -812,6 +886,8 @@ def item_scatter(
             )
         )
     menus.extend(menus_below)
+    # Kravmenuen ligger forrest og er ikke et filter, så den fylder en plads.
+    dimensions = ([None] * (len(menus) - len(menus_below))) + dimensions_below
     annotations = zone_annotations + static_annotations
     # Plads til kravrækken plus de rækker de øvrige knapper fylder.
     bottom_margin = 60 + (1 + rows_below) * BUTTON_ROW_MARGIN_PX
@@ -827,6 +903,7 @@ def item_scatter(
         shapes=shapes,
         annotations=annotations,
         updatemenus=menus,
+        meta=filter_metadata(dimensions),
         margin=dict(b=bottom_margin),
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
@@ -884,5 +961,7 @@ def _group_categories(
 
 
 def write_html(fig: "go.Figure", path: str, label: str, log: Log = print) -> None:
-    pio.write_html(fig, path, include_plotlyjs="cdn")
+    pio.write_html(
+        fig, path, include_plotlyjs="cdn", post_script=filter_script(fig)
+    )
     log(f"[{label}] gemt til: {path}")

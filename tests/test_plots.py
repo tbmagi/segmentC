@@ -16,6 +16,7 @@ from segmentering.metrics import (
 from segmentering.plots import (
     BUTTON_ROW_GAP,
     TOGGLE_GUARD,
+    filter_script,
     X_MAX_ZONE,
     Y_MAX_ZONE,
     _segment_highlight_buttons,
@@ -206,22 +207,50 @@ def test_the_group_plot_has_the_same_button_rows_as_expected():
     ]
 
 
-def test_category_buttons_hide_exactly_their_own_customers():
+def test_every_trace_carries_its_filter_values():
+    """Scriptet matcher på trace.meta, så hvert spor skal bære sine værdier."""
     fig = group_scatter(groups_with_categories(), Config(), DATES)
-    button = next(
-        m.buttons[0] for m in fig.layout.updatemenus if m.buttons[0].label == "A+"
-    )
-    assert list(button.args[1]) == [0]  # kun KUNDE A ligger i A+
+    by_name = {t.name: t.meta for t in fig.data}
+    assert by_name["KUNDE A"] == {
+        "kundetype": "Eksisterende",
+        "kategori": "A+",
+        "kam": "PHA",
+    }
+    assert by_name["KUNDE D"]["kam"] == "(Blank)"
 
 
-def test_customer_type_buttons_span_every_category():
+def test_the_figure_says_which_menu_filters_on_what():
     fig = group_scatter(groups_with_categories(), Config(), DATES)
-    button = next(
-        m.buttons[0]
-        for m in fig.layout.updatemenus
-        if m.buttons[0].label == "Eksisterende"
-    )
-    assert list(button.args[1]) == [0, 2]  # KUNDE A (A+) og KUNDE C (B+)
+    filters = fig.layout.meta["filters"]
+    menus = fig.layout.updatemenus
+    for index, dimension in filters.items():
+        label = menus[int(index)].buttons[0].label
+        if dimension == "kundetype":
+            assert label in {"Eksisterende", "Ny", "Tidligere"}
+        elif dimension == "kategori":
+            assert label in {"A+", "A-", "B+", "B-"}
+        elif dimension == "kam":
+            assert label in {"PHA", "TSP", "(Blank)"}
+    # Fremhæv-knapperne er ikke filtre og må ikke stå i opslaget
+    highlight = [
+        i for i, m in enumerate(menus) if m.buttons[0].label == "Automotive"
+    ]
+    assert all(str(i) not in filters for i in highlight)
+
+
+def test_the_item_plot_also_declares_its_filters():
+    fig = item_scatter(sample_items(), Config(), DATES)
+    filters = fig.layout.meta["filters"]
+    assert set(filters.values()) <= {"kategori", "kam"}
+    # Kravmenuen ligger forrest og er ikke et filter
+    assert "0" not in filters
+
+
+def test_the_filter_script_is_attached_when_there_are_filters():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    script = filter_script(fig)
+    assert script and "plotly_buttonclicked" in script
+    assert "legendonly" in script
 
 
 def test_a_customer_without_a_category_still_gets_a_legend_group():
@@ -305,12 +334,17 @@ def test_rows_are_stacked_downwards():
         assert earlier - later == pytest.approx(BUTTON_ROW_GAP)
 
 
-def test_toggle_buttons_hide_and_show_the_matching_traces():
+def test_toggle_buttons_only_record_the_press():
+    """
+    Knapperne ændrer ikke selv synligheden. De bruger method="skip", så Plotly
+    kun husker om de er trykket ned; scriptet i den færdige HTML regner
+    synligheden ud som fællesmængden af alle filterrækker.
+    """
     buttons = toggle_buttons(["Anders", "Mette"], ["Anders", "Mette", "Anders"])
-    anders = next(b for b in buttons if b["label"] == "Anders")
-    assert anders["args"][1] == [0, 2]
-    assert anders["args"][0]["visible"] == ["legendonly", "legendonly"]
-    assert anders["args2"][0]["visible"] == [True, True]
+    assert [b["label"] for b in buttons] == ["Anders", "Mette"]
+    for button in buttons:
+        assert button["method"] == "skip"
+        assert button["args"] == [{}] and button["args2"] == [{}]
 
 
 def test_a_value_without_traces_gets_no_button():
@@ -320,20 +354,17 @@ def test_a_value_without_traces_gets_no_button():
     assert len(toggle_buttons(["Anders", "Ukendt"], ["Anders"])) == 1
 
 
-def test_toggle_buttons_carry_the_binding_guard():
+def test_filters_do_not_overwrite_each_other():
     """
-    Plotly overvåger menuer hvis knapper binder sig til ÉN egenskab og retter
-    så deres aktiv-markering, når egenskaben ændres af nogen som helst. Med
-    kategori- og KAM-knapper på de samme spor fik en KAM-knap en kategori-knap
-    til at lyse op af sig selv — og knappen hoppede til siden ved gentegningen.
-    Den ekstra egenskab bryder bindingen. Fjernes den, kommer fejlen igen.
+    Rækkerne skal begrænse hinanden, ikke overskrive hinanden.
+
+    Med én knap pr. værdi der satte visible direkte, ville "vis Tidligere
+    igen" tænde for ALLE tidligere kunder — også dem en KAM-knap havde slået
+    fra. Derfor må knapperne ikke selv sætte visible.
     """
-    guard_attribute, guard_value = TOGGLE_GUARD
     for button in toggle_buttons(["Anders"], ["Anders", "Anders"]):
         for slot in ("args", "args2"):
-            spec = button[slot][0]
-            assert len(spec) > 1, "bindingen skal ramme mere end én egenskab"
-            assert spec[guard_attribute] == [guard_value] * len(button[slot][1])
+            assert "visible" not in button[slot][0]
 
 
 def test_highlight_buttons_carry_the_binding_guard():
