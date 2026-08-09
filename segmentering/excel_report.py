@@ -15,7 +15,7 @@ from typing import Callable
 import pandas as pd
 
 from .config import Config
-from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO
+from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM
 from .metrics import (
     FIRST_ACTIVITY,
     GP_SUM,
@@ -43,6 +43,7 @@ SUMMARY_COLUMNS: dict[str, list[str]] = {
     "minimal": [
         GROUP,
         "Kundetype",
+        KAM,
         "Kundekategori",
         INDUSTRY_SEGMENT,
         "antal_items",
@@ -52,6 +53,7 @@ SUMMARY_COLUMNS: dict[str, list[str]] = {
     "kompakt": [
         GROUP,
         "Kundetype",
+        KAM,
         "Kundekategori",
         INDUSTRY_SEGMENT,
         "antal_items",
@@ -65,6 +67,7 @@ SUMMARY_COLUMNS: dict[str, list[str]] = {
     "fuld": [
         GROUP,
         "Kundetype",
+        KAM,
         "Kundekategori",
         INDUSTRY_SEGMENT,
         "antal_items",
@@ -163,6 +166,7 @@ def prepare_item_sheet(
     elif cfg.excel_detail == "kompakt":
         preferred = [
             GROUP,
+            KAM,
             ITEM_NO,
             item_window,
             group_window,
@@ -196,6 +200,7 @@ def parameter_sheet(cfg: Config, dates) -> pd.DataFrame:
         ("Turnover-forankring kundegruppe-plot", cfg.group_plot_anchor),
         ("Turnover-forankring item-plot", cfg.item_plot_anchor),
         ("Frasortering af døde items", cfg.drop_dead_items),
+        ("Frasortering af budgettal efter dags dato", cfg.drop_future_periods),
         ("GM-måneder pr. item", cfg.gm_months),
         ("Outlier-filter aktivt", cfg.remove_outliers),
         ("Outlier-tærskel (std)", cfg.outlier_std_threshold),

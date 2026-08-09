@@ -240,6 +240,9 @@ class Config:
     )
     drop_zero_turnover: bool = True
     drop_dead_items: bool = True
+    #: Rækker med en periode efter 'dags dato' er budgettal og udelades.
+    #: Slås den fra, indgår budgetrækker i beregningen som var de realiseret.
+    drop_future_periods: bool = True
 
     # Outliers
     remove_outliers: bool = True

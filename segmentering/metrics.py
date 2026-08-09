@@ -23,6 +23,7 @@ from .dataio import (
     GROUP,
     INDUSTRY_SEGMENT,
     ITEM_NO,
+    KAM,
     PERIOD,
     TURNOVER,
     find_column,
@@ -50,6 +51,7 @@ _EMPTY_ITEM_COLUMNS = [
     WINDOW_ITEM,
     WINDOW_GROUP,
     ITEM_GM,
+    KAM,
 ]
 
 
@@ -218,6 +220,10 @@ def item_metrics(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         per_item[GP_SUM] / per_item[TURNOVER_SUM],
         np.nan,
     )
+    # KAM slås op pr. kundegruppe, ikke pr. item, så en vare altid følger den
+    # KAM der har kunden. Ellers kunne to varer hos samme kunde havne under
+    # hver sin knap på item-plottet.
+    per_item[KAM] = per_item[GROUP].map(kam_by_group(df))
     return per_item
 
 
@@ -257,6 +263,7 @@ def group_metrics(
                 "Kundekategori",
                 "Kundetype",
                 INDUSTRY_SEGMENT,
+                KAM,
             ]
         )
 
@@ -287,7 +294,30 @@ def group_metrics(
     per_group[INDUSTRY_SEGMENT] = per_group[GROUP].map(
         _industry_segment_by_group(source_df)
     )
+    per_group[KAM] = per_group[GROUP].map(kam_by_group(source_df))
     return per_group
+
+
+def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
+    """
+    Finder den ansvarlige KAM pr. kundegruppe.
+
+    Kolonnen ligger på rækkeniveau, så den samme kunde kan have flere KAM'er
+    hen over historikken — fx efter en overdragelse. Kunden tildeles den KAM
+    der står på den SENESTE aktivitet, så plottet viser hvem der har kunden
+    i dag frem for hvem der engang havde den.
+
+    Kolonnen er valgfri. Findes den ikke, returneres et tomt opslag.
+    """
+    column = find_column(df, KAM)
+    if column is None:
+        return {}
+    known = df[[GROUP, PERIOD, column]].dropna(subset=[column])
+    known = known[known[column].astype(str).str.strip() != ""]
+    if known.empty:
+        return {}
+    # sort_values er stabil, så den sidste række pr. gruppe er den nyeste.
+    return known.sort_values(PERIOD).groupby(GROUP)[column].last().to_dict()
 
 
 def _industry_segment_by_group(df: pd.DataFrame) -> dict[str, object]:

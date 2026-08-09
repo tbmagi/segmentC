@@ -311,7 +311,7 @@ def run_analysis(cfg: Config, log: Log = print) -> list[SegmentResult]:
         "seneste aktivitet"
     )
 
-    df = apply_row_filters(df, cfg, log)
+    df = apply_row_filters(df, cfg, dates, log)
     df = annotate(df, cfg, dates, log)
 
     report = ExcelReport(cfg) if cfg.write_excel else None

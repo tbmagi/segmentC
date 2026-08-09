@@ -46,6 +46,12 @@ REQUIRED_COLUMNS = [
 TURNOVER_TYPE = "Turnover type"
 FISCAL_YEAR = "Fiscal year"
 INDUSTRY_SEGMENT = "Industry_segment"
+KAM = "KAM"
+
+OPTIONAL_COLUMNS = [TURNOVER_TYPE, FISCAL_YEAR, INDUSTRY_SEGMENT, KAM]
+
+#: Hvor langt ned i arket der ledes efter overskriftsrækken.
+HEADER_SCAN_ROWS = 200
 
 # Kolonner pakken selv tilføjer undervejs.
 GROUP = "KundeGruppe"
@@ -110,14 +116,69 @@ class ReferenceDates:
 # --- Indlæsning --------------------------------------------------------------
 
 
+def locate_header_row(frame: pd.DataFrame) -> tuple[int | None, list[str]]:
+    """
+    Finder den række der indeholder kolonneoverskrifterne.
+
+    Arket kan have en forside, et logo eller nogle nøgletal over selve
+    tabellen, så overskrifterne står ikke nødvendigvis i første række. Her
+    gennemsøges de øverste rækker, og den første række der indeholder samtlige
+    påkrævede kolonnenavne vinder.
+
+    ``frame`` skal være læst med ``header=None``, så alle rækker er data.
+
+    Returnerer rækkens indeks og en liste over manglende kolonner. Er listen
+    tom, blev alle påkrævede kolonner fundet. Blev ingen fuldtræffer fundet,
+    peger indekset på den bedste kandidat, så fejlbeskeden kan vise hvad der
+    faktisk stod der.
+    """
+    best_row: int | None = None
+    best_hits = -1
+    best_missing = list(REQUIRED_COLUMNS)
+
+    for index in range(len(frame)):
+        cells = {
+            str(value).strip().lower()
+            for value in frame.iloc[index].tolist()
+            if pd.notna(value)
+        }
+        missing = [c for c in REQUIRED_COLUMNS if c.lower() not in cells]
+        if not missing:
+            return index, []
+        hits = len(REQUIRED_COLUMNS) - len(missing)
+        if hits > best_hits:
+            best_row, best_hits, best_missing = index, hits, missing
+
+    return best_row, best_missing
+
+
 def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
     """
     Læser Excel-filen, normaliserer kolonnenavne og tilføjer den parsede
     periode-kolonne.
+
+    Overskriftsrækken findes automatisk, så det ikke gør noget at tabellen
+    starter længere nede i arket.
     """
     log(f"Indlæser: {path}")
     try:
-        df = pd.read_excel(path)
+        preview = pd.read_excel(path, header=None, nrows=HEADER_SCAN_ROWS)
+        header_row, missing = locate_header_row(preview)
+        if missing:
+            found = (
+                [str(v).strip() for v in preview.iloc[header_row] if pd.notna(v)]
+                if header_row is not None
+                else []
+            )
+            raise ValueError(
+                "Kunne ikke finde en række med alle de påkrævede kolonner i "
+                f"de første {HEADER_SCAN_ROWS} rækker af filen.\n"
+                f"Følgende mangler: {missing}\n"
+                f"Bedste bud var række {(header_row or 0) + 1}, som indeholdt: {found}"
+            )
+        if header_row:
+            log(f"  Fandt kolonneoverskrifter i række {header_row + 1}")
+        df = pd.read_excel(path, header=header_row)
     except PermissionError as exc:
         raise PermissionError(
             f"Kunne ikke åbne filen: {path}\n"
@@ -132,13 +193,18 @@ def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
         raise FileNotFoundError(f"Filen blev ikke fundet: {path}") from exc
 
     df.columns = [str(c).strip() for c in df.columns]
+    # Tomme rækker under tabellen (eller mellem afsnit) bærer ingen data.
+    df = df.dropna(how="all").copy()
 
+    # Omdøb til de kanoniske navne, så resten af koden slipper for at lede
+    # case-insensitivt. Både påkrævede og valgfrie kolonner normaliseres.
     rename_map: dict[str, str] = {}
     missing: list[str] = []
-    for canonical in REQUIRED_COLUMNS:
+    for canonical in REQUIRED_COLUMNS + OPTIONAL_COLUMNS:
         found = find_column(df, canonical)
         if found is None:
-            missing.append(canonical)
+            if canonical in REQUIRED_COLUMNS:
+                missing.append(canonical)
         elif found != canonical:
             rename_map[found] = canonical
     if missing:
@@ -160,15 +226,36 @@ def _normalised(values: object) -> set[str]:
     return {str(v).strip().lower() for v in values}  # type: ignore[union-attr]
 
 
-def apply_row_filters(df: pd.DataFrame, cfg: Config, log: Log = print) -> pd.DataFrame:
+def apply_row_filters(
+    df: pd.DataFrame, cfg: Config, dates: ReferenceDates, log: Log = print
+) -> pd.DataFrame:
     """
     Fjerner de rækker der aldrig skal indgå i analysen:
 
-    1. uønskede værdier i 'Turnover type'
-    2. tomme kundegrupper
-    3. eksplicit ekskluderede kundegrupper
-    4. rækker med Turnover DKK = 0 (valgfrit)
+    1. perioder efter dags dato (budgettal)
+    2. uønskede værdier i 'Turnover type'
+    3. tomme kundegrupper
+    4. eksplicit ekskluderede kundegrupper
+    5. rækker med Turnover DKK = 0 (valgfrit)
     """
+    if cfg.drop_future_periods:
+        # Alt efter dags dato er budget, ikke realiseret salg. Selve
+        # måneden for dags dato regnes med: er dags dato 06-2026, beholdes
+        # 06-2026, mens 07-2026 og frem falder fra.
+        future = df[PERIOD].notna() & (df[PERIOD] > dates.today)
+        dropped = int(future.sum())
+        if dropped:
+            log(
+                f"Frasorterede budgettal efter {dates.today:%m-%Y}: "
+                f"fjernede {dropped} rækker"
+            )
+        df = df[~future].copy()
+        if df.empty:
+            raise ValueError(
+                f"Ingen rækker ligger på eller før dags dato ({dates.today:%m-%Y}). "
+                "Tjek at 'Dags dato' passer til perioderne i filen."
+            )
+
     if cfg.excluded_turnover_types:
         column = find_column(df, TURNOVER_TYPE)
         if column is None:

@@ -26,7 +26,7 @@ from .config import (
     Band,
     Config,
 )
-from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, ReferenceDates
+from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
 from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM
 
 try:  # Plotly er en hård afhængighed for plots, men ikke for beregningerne.
@@ -223,7 +223,82 @@ def _button_width(label: object) -> float:
     return (len(str(label)) * BUTTON_CHAR_PX + BUTTON_PADDING_PX) / BUTTON_AREA_PX
 
 
-def flow_button_menus(buttons: Sequence[dict], y_start: float) -> tuple[list[dict], int]:
+def _row_label(text: str, y: float) -> dict:
+    """Overskrift til venstre for en knaprække, så rækkerne kan skelnes."""
+    return dict(
+        x=0.0,
+        y=y,
+        xref="paper",
+        yref="paper",
+        text=text,
+        showarrow=False,
+        xanchor="left",
+        yanchor="top",
+        font=dict(size=10, color="#555555"),
+        yshift=-7,
+    )
+
+
+def _label_width(text: str) -> float:
+    return (len(text) * BUTTON_CHAR_PX + 16) / BUTTON_AREA_PX
+
+
+def toggle_buttons(
+    values: Sequence[object], trace_values: Sequence[object]
+) -> list[dict]:
+    """
+    Bygger én tænd/sluk-knap pr. værdi.
+
+    Knappen skjuler alle spor hvis værdi matcher, og viser dem igen ved næste
+    klik. Kræver at plottet er opdelt i spor pr. værdi — ellers kan et helt
+    spor ikke slukkes uden at tage andre punkter med.
+    """
+    buttons: list[dict] = []
+    for value in values:
+        indices = [i for i, v in enumerate(trace_values) if v == value]
+        if not indices:
+            continue
+        count = len(indices)
+        buttons.append(
+            dict(
+                label=str(value),
+                method="restyle",
+                args=[{"visible": ["legendonly"] * count}, indices],
+                args2=[{"visible": [True] * count}, indices],
+            )
+        )
+    return buttons
+
+
+def stack_button_rows(
+    groups: Sequence[tuple[str, list[dict]]], y_start: float
+) -> tuple[list[dict], list[dict], int]:
+    """
+    Lægger flere navngivne knapgrupper under hinanden.
+
+    Returnerer menuerne, overskrifterne til hver række og det samlede antal
+    rækker, så kalderen kan reservere plads under plottet.
+    """
+    menus: list[dict] = []
+    annotations: list[dict] = []
+    y = y_start
+    total_rows = 0
+    for label, buttons in groups:
+        if not buttons:
+            continue
+        row_menus, rows = flow_button_menus(
+            buttons, y_start=y, x_offset=_label_width(label)
+        )
+        menus.extend(row_menus)
+        annotations.append(_row_label(label, y))
+        y -= rows * BUTTON_ROW_GAP
+        total_rows += rows
+    return menus, annotations, total_rows
+
+
+def flow_button_menus(
+    buttons: Sequence[dict], y_start: float, x_offset: float = 0.0
+) -> tuple[list[dict], int]:
     """
     Placerer én-knaps-menuer på rad og bryder til en ny række når rækken er fuld.
 
@@ -238,12 +313,12 @@ def flow_button_menus(buttons: Sequence[dict], y_start: float) -> tuple[list[dic
     """
     menus: list[dict] = []
     spacing = BUTTON_SPACING_PX / BUTTON_AREA_PX
-    x = 0.0
+    x = x_offset
     rows = 1
     for button in buttons:
         width = _button_width(button.get("label", ""))
-        if x > 0 and x + width > 1.0:
-            x = 0.0
+        if x > x_offset and x + width > 1.0:
+            x = x_offset
             rows += 1
         menus.append(
             dict(
@@ -398,72 +473,106 @@ def group_scatter(
 
     segment_colours = _colour_map(segments) if has_industry else {}
 
+    has_kam = KAM in data.columns and data[KAM].notna().any()
+    kam_values = sorted(data[KAM].dropna().unique().tolist()) if has_kam else []
+
     fig = go.Figure()
     trace_segments: list[pd.Series] = []
+    trace_kams: list[object] = []
 
     for name in groups:
-        block = data[data[column] == name]
-        if block.empty:
+        whole_block = data[data[column] == name]
+        if whole_block.empty:
             continue
-        block = block.sort_values("samlet_turnover_window", ascending=False)
+        whole_block = whole_block.sort_values("samlet_turnover_window", ascending=False)
 
-        if colour_by_segment or not has_industry:
-            edge_colours = EDGE_COLOUR_PLAIN
-            edge_widths = EDGE_WIDTH_PLAIN
-        else:
-            edge_colours = [
-                segment_colours.get(segment, EDGE_COLOUR_PLAIN)
-                if pd.notna(segment)
-                else EDGE_COLOUR_PLAIN
-                for segment in block[INDUSTRY_SEGMENT]
-            ]
-            edge_widths = [
-                EDGE_WIDTH_BASE if pd.notna(segment) else EDGE_WIDTH_PLAIN
-                for segment in block[INDUSTRY_SEGMENT]
-            ]
+        # Sporene deles yderligere op pr. KAM, så en KAM-knap kan slukke for
+        # præcis sine kunder. Kun det første spor i hver farvekategori kommer i
+        # legenden, så den stadig viser én linje pr. kundetype.
+        first_in_group = True
+        for kam, block in _split_by_kam(whole_block, has_kam, kam_values):
+            trace_kams.append(kam)
+            show_in_legend = first_in_group
+            first_in_group = False
 
-        trace_segments.append(
-            block[INDUSTRY_SEGMENT]
-            if has_industry
-            else pd.Series([None] * len(block), index=block.index)
-        )
+            if colour_by_segment or not has_industry:
+                edge_colours = EDGE_COLOUR_PLAIN
+                edge_widths = EDGE_WIDTH_PLAIN
+            else:
+                edge_colours = [
+                    segment_colours.get(segment, EDGE_COLOUR_PLAIN)
+                    if pd.notna(segment)
+                    else EDGE_COLOUR_PLAIN
+                    for segment in block[INDUSTRY_SEGMENT]
+                ]
+                edge_widths = [
+                    EDGE_WIDTH_BASE if pd.notna(segment) else EDGE_WIDTH_PLAIN
+                    for segment in block[INDUSTRY_SEGMENT]
+                ]
 
-        fig.add_trace(
-            go.Scatter(
-                x=block["samlet_GM"] * 100,
-                y=block["samlet_turnover_window"],
-                mode="markers+text",
-                name=str(name),
-                text=block[GROUP],
-                textposition="top right",
-                textfont=dict(size=9),
-                marker=dict(
-                    size=9,
-                    color=colours.get(name, "#7f7f7f"),
-                    line=dict(color=edge_colours, width=edge_widths),
-                ),
-                customdata=block[
-                    ["Kundetype", "Kundekategori", INDUSTRY_SEGMENT]
-                ].astype(object).where(block[["Kundetype", "Kundekategori", INDUSTRY_SEGMENT]].notna(), "").values,
-                hovertemplate=(
-                    "<b>%{text}</b><br>"
-                    "GM%: %{x:.1f}%<br>"
-                    "Turnover: %{y:,.0f} DKK<br>"
-                    "Kundetype: %{customdata[0]}<br>"
-                    "Kategori: %{customdata[1]}<br>"
-                    "Industry segment: %{customdata[2]}<br>"
-                    "<extra></extra>"
-                ),
+            trace_segments.append(
+                block[INDUSTRY_SEGMENT]
+                if has_industry
+                else pd.Series([None] * len(block), index=block.index)
             )
-        )
+
+            hover_columns = ["Kundetype", "Kundekategori", INDUSTRY_SEGMENT, KAM]
+            hover_columns = [c for c in hover_columns if c in block.columns]
+            hover_data = (
+                block[hover_columns]
+                .astype(object)
+                .where(block[hover_columns].notna(), "")
+                .values
+            )
+            hover_lines = {
+                "Kundetype": "Kundetype: %{customdata[IDX]}<br>",
+                "Kundekategori": "Kategori: %{customdata[IDX]}<br>",
+                INDUSTRY_SEGMENT: "Industry segment: %{customdata[IDX]}<br>",
+                KAM: "KAM: %{customdata[IDX]}<br>",
+            }
+            hovertemplate = (
+                "<b>%{text}</b><br>GM%: %{x:.1f}%<br>Turnover: %{y:,.0f} DKK<br>"
+                + "".join(
+                    hover_lines[c].replace("IDX", str(i))
+                    for i, c in enumerate(hover_columns)
+                )
+                + "<extra></extra>"
+            )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=block["samlet_GM"] * 100,
+                    y=block["samlet_turnover_window"],
+                    mode="markers+text",
+                    name=str(name),
+                    legendgroup=str(name),
+                    showlegend=show_in_legend,
+                    text=block[GROUP],
+                    textposition="top right",
+                    textfont=dict(size=9),
+                    marker=dict(
+                        size=9,
+                        color=colours.get(name, "#7f7f7f"),
+                        line=dict(color=edge_colours, width=edge_widths),
+                    ),
+                    customdata=hover_data,
+                    hovertemplate=hovertemplate,
+                )
+            )
 
     shapes, annotations = category_zone_shapes(cfg)
 
-    menus: list[dict] = []
-    bottom_margin = 40
+    button_groups: list[tuple[str, list[dict]]] = []
     if has_industry and segments and not colour_by_segment:
-        menus, button_rows = _segment_highlight_buttons(segments, trace_segments)
-        bottom_margin = 65 + button_rows * BUTTON_ROW_MARGIN_PX
+        button_groups.append(
+            ("Fremhæv branche:", _segment_highlight_buttons(segments, trace_segments))
+        )
+    if has_kam and kam_values:
+        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
+
+    menus, row_labels, button_rows = stack_button_rows(button_groups, y_start=-0.14)
+    annotations = annotations + row_labels
+    bottom_margin = 40 if not button_rows else 65 + button_rows * BUTTON_ROW_MARGIN_PX
 
     subtitle_extra = title_suffix
     if has_industry and not colour_by_segment:
@@ -505,9 +614,31 @@ def group_scatter(
     return fig
 
 
+def _split_by_kam(
+    block: pd.DataFrame, has_kam: bool, kam_values: Sequence[object]
+) -> "list[tuple[object, pd.DataFrame]]":
+    """
+    Deler et udsnit op i ét stykke pr. KAM.
+
+    Rækker uden KAM samles til sidst under ``None``, så de stadig tegnes —
+    de kan bare ikke slukkes med en KAM-knap.
+    """
+    if not has_kam:
+        return [(None, block)]
+    parts: list[tuple[object, pd.DataFrame]] = []
+    for kam in kam_values:
+        subset = block[block[KAM] == kam]
+        if not subset.empty:
+            parts.append((kam, subset))
+    without = block[block[KAM].isna()]
+    if not without.empty:
+        parts.append((None, without))
+    return parts
+
+
 def _segment_highlight_buttons(
     segments: Sequence[object], trace_segments: Sequence[pd.Series]
-) -> tuple[list[dict], int]:
+) -> list[dict]:
     """
     Én knap pr. Industry_segment der fremhæver segmentets punkter.
 
@@ -542,7 +673,7 @@ def _segment_highlight_buttons(
                 args2=[{"marker.line.width": base_widths}, trace_indices],
             )
         )
-    return flow_button_menus(buttons, y_start=-0.14)
+    return buttons
 
 
 # --- Item-plot ---------------------------------------------------------------
@@ -579,9 +710,13 @@ def item_scatter(
     )
     group_colours = _colour_map(sorted(data[GROUP].dropna().unique().tolist()))
 
+    has_kam = KAM in data.columns and data[KAM].notna().any()
+    kam_values = sorted(data[KAM].dropna().unique().tolist()) if has_kam else []
+
     fig = go.Figure()
-    traces_by_category: dict[str, list[int]] = {}
     category_order: list[str] = []
+    trace_categories: list[str] = []
+    trace_kams: list[object] = []
 
     for name in customer_groups:
         block = data[data[GROUP] == name]
@@ -589,10 +724,13 @@ def item_scatter(
             continue
         category = categories_by_group.get(name, "-")
         label = category if category != "-" else "Ingen kategori"
-        if category not in traces_by_category:
-            traces_by_category[category] = []
+        if category not in category_order:
             category_order.append(category)
-        traces_by_category[category].append(len(fig.data))
+        trace_categories.append(category)
+        # KAM er slået op pr. kundegruppe, så alle en kundes varer hører til
+        # samme KAM og kan tændes og slukkes under ét.
+        kam = block[KAM].dropna().iloc[0] if has_kam and block[KAM].notna().any() else None
+        trace_kams.append(kam)
 
         fig.add_trace(
             go.Scatter(
@@ -615,7 +753,8 @@ def item_scatter(
                     "<b>%{text}</b><br>"
                     "Kundegruppe: %{customdata[0]}<br>"
                     f"Kategori: {category}<br>"
-                    "GM%: %{x:.1f}%<br>"
+                    + (f"KAM: {kam}<br>" if kam is not None else "")
+                    + "GM%: %{x:.1f}%<br>"
                     "Turnover: %{y:,.0f} DKK<br>"
                     "<extra></extra>"
                 ),
@@ -629,7 +768,24 @@ def item_scatter(
         if category and category[0] in cfg.volume_zones
     ]
     default_level = present[0] if present else (levels[0] if levels else "A")
-    shapes, annotations = volume_zone_shapes(default_level, cfg)
+    shapes, zone_annotations = volume_zone_shapes(default_level, cfg)
+
+    # Knapperne under plottet stables: først kravniveau, så kategori-blokke og
+    # til sidst KAM.
+    level_label = "Volumenkrav:"
+    below_levels = -0.14 - BUTTON_ROW_GAP
+    button_groups: list[tuple[str, list[dict]]] = [
+        ("Vis/skjul kategori:", toggle_buttons(category_order, trace_categories))
+    ]
+    if has_kam and kam_values:
+        button_groups.append(("Vis/skjul KAM:", toggle_buttons(kam_values, trace_kams)))
+
+    menus_below, row_labels, rows_below = stack_button_rows(button_groups, below_levels)
+
+    # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
+    # udskifter hele annotations-listen, så uden dem forsvandt rækkernes
+    # navne så snart man skiftede niveau.
+    static_annotations = [_row_label(level_label, -0.14)] + row_labels
 
     level_buttons = []
     for level in levels:
@@ -638,7 +794,12 @@ def item_scatter(
             dict(
                 label=f"Krav {level}",
                 method="relayout",
-                args=[{"shapes": level_shapes, "annotations": level_annotations}],
+                args=[
+                    {
+                        "shapes": level_shapes,
+                        "annotations": level_annotations + static_annotations,
+                    }
+                ],
             )
         )
 
@@ -650,7 +811,7 @@ def item_scatter(
                 direction="right",
                 showactive=True,
                 active=levels.index(default_level) if default_level in levels else 0,
-                x=0.0,
+                x=_label_width(level_label),
                 xanchor="left",
                 y=-0.14,
                 yanchor="top",
@@ -658,12 +819,10 @@ def item_scatter(
                 buttons=level_buttons,
             )
         )
-    category_menus, category_rows = _category_toggle_buttons(
-        category_order, traces_by_category
-    )
-    menus.extend(category_menus)
-    # Plads til "Krav"-rækken plus de rækker kategori-knapperne fylder.
-    bottom_margin = 60 + (1 + category_rows) * BUTTON_ROW_MARGIN_PX
+    menus.extend(menus_below)
+    annotations = zone_annotations + static_annotations
+    # Plads til kravrækken plus de rækker de øvrige knapper fylder.
+    bottom_margin = 60 + (1 + rows_below) * BUTTON_ROW_MARGIN_PX
 
     fig.update_layout(
         title=dict(
@@ -727,26 +886,6 @@ def _group_categories(
         zip(per_group[GROUP], per_group["samlet_turnover_window"])
     )
     return categories, turnovers
-
-
-def _category_toggle_buttons(
-    category_order: Sequence[str], traces_by_category: Mapping[str, list[int]]
-) -> tuple[list[dict], int]:
-    """Én knap pr. kategori-blok der viser/skjuler alle kunder i blokken."""
-    buttons: list[dict] = []
-    for category in category_order:
-        indices = traces_by_category[category]
-        count = len(indices)
-        buttons.append(
-            dict(
-                label=category if category != "-" else "Ingen kat.",
-                method="restyle",
-                args=[{"visible": ["legendonly"] * count}, indices],
-                args2=[{"visible": [True] * count}, indices],
-            )
-        )
-    # Rækken lægges under "Krav"-rækken, som altid fylder præcis én række.
-    return flow_button_menus(buttons, y_start=-0.14 - BUTTON_ROW_GAP)
 
 
 # --- Skrivning ---------------------------------------------------------------

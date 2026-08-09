@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from segmentering.config import Band, Config, OutputPaths, validate_bands
-from segmentering.dataio import GROUP, ITEM_NO
+from segmentering.dataio import GROUP, ITEM_NO, KAM
 from segmentering.excel_report import (
     SUMMARY_COLUMNS,
     prepare_item_sheet,
@@ -134,6 +134,7 @@ def sample_group_frame():
             {
                 GROUP: "A",
                 "Kundetype": "Eksisterende",
+                KAM: "Mette Kold",
                 "Kundekategori": "A+",
                 "Industry_segment": "Medico",
                 "antal_items": 3,

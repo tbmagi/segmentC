@@ -42,6 +42,9 @@ andet sted hen end til `print`.
 
 ## Datakrav
 
+Overskriftsrækken findes automatisk, så tabellen må gerne starte længere nede
+i arket — en forside, et logo eller nogle nøgletal ovenover gør ingen skade.
+
 Filen skal indeholde disse kolonner (navnene matches uafhængigt af store og
 små bogstaver):
 
@@ -55,11 +58,13 @@ Disse er valgfrie og aktiverer hver sin funktion:
 | `Turnover type` | frasortering og CN/DK-opdeling |
 | `Fiscal year` | identifikation af nye kunder |
 | `Industry_segment` | farve- og kantlogik på kundegruppe-plottet |
+| `KAM` | tænd/sluk-knapper pr. key account manager på begge plots |
 
 ## Hvordan data behandles
 
-1. **Frasortering** – ekskluderede kundegrupper og turnover-typer, rækker med
-   turnover 0, og "døde" items uden aktivitet i kundens turnover-vindue.
+1. **Frasortering** – perioder efter dags dato (budgettal), ekskluderede
+   kundegrupper og turnover-typer, rækker med turnover 0, og "døde" items uden
+   aktivitet i kundens turnover-vindue.
 2. **Item-type** – item no. klassificeres som sinter (70–77) eller støbe
    (60–67) ud fra de to første cifre og mindst 6 cifre. Et suffix på nummeret
    overruler reglen: `-S1` sinter, `-S2` støbe, `-S0` fjern helt.
@@ -71,7 +76,9 @@ Disse er valgfrie og aktiverer hver sin funktion:
 6. **Outlier-filter** – valgfrit z-score-filter inden for hver kundegruppe.
 7. **Kundekategori** – A/B/C/D ud fra turnover-båndet, med `+`/`-` alt efter om
    GM% når kategoriens krav.
-8. **Output** – HTML-plots og Excel-rapport.
+8. **KAM** – kunden tildeles den key account manager der står på den seneste
+   aktivitet, så et skift undervejs slår igennem.
+9. **Output** – HTML-plots og Excel-rapport.
 
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.

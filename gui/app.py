@@ -189,12 +189,18 @@ class SegmenteringApp(tk.Tk):
         help_icon(
             frame,
             "Sti til Excel-filen med rå salgsdata.\n\n"
+            "Overskriftsrækken findes automatisk, så det gør ikke noget at "
+            "tabellen starter længere nede i arket.\n\n"
             "Påkrævede kolonner: Statistics group, Item no., Year-mo, Cost, "
             "Qty., Turnover DKK, Local_COGS_DKK, Local_GP_DKK.\n\n"
             "Valgfri kolonner:\n"
             "  • Turnover type     – til frasortering og CN/DK-opdeling\n"
             "  • Fiscal year       – til ny-kunde klassifikation\n"
-            "  • Industry_segment  – til farvelogik på plottet",
+            "  • Industry_segment  – til farvelogik på plottet\n"
+            "  • KAM               – giver tænd/sluk-knapper pr. key account\n"
+            "                        manager på begge plots\n\n"
+            "Rækker med en periode efter 'Dags dato' regnes som budgettal og "
+            "udelades.",
         ).grid(row=0, column=3, padx=(4, 0))
 
         ttk.Label(frame, text="Output-mappe:").grid(row=1, column=0, sticky="w", pady=3)
@@ -238,7 +244,10 @@ class SegmenteringApp(tk.Tk):
             frame, "Dags dato:", self.var_reference_date, row=1, hint="MM-ÅÅÅÅ",
             tooltip=(
                 "Reference-datoen hele segmenteringen tager udgangspunkt i.\n\n"
-                "Format: MM-ÅÅÅÅ, fx 05-2026."
+                "Format: MM-ÅÅÅÅ, fx 05-2026.\n\n"
+                "Perioder EFTER denne måned regnes som budgettal og udelades. "
+                "Er dags dato 06-2026, tæller 06-2026 med, mens 07-2026 og "
+                "frem falder fra."
             ),
         )
         labelled_entry(
