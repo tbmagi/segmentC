@@ -27,7 +27,7 @@ from .config import (
     Config,
 )
 from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
-from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM
+from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM, sort_kams
 
 try:  # Plotly er en hård afhængighed for plots, men ikke for beregningerne.
     import plotly.colors as plotly_colours
@@ -436,7 +436,7 @@ def _axes(
     y_values: Sequence[float] = (),
 ) -> dict:
     x_axis = dict(
-        title="Gross Margin potentiale (%)",
+        title="Gross Margin (%)",
         type=cfg.x_scale,
         gridcolor=GRID_COLOUR,
     )
@@ -503,7 +503,7 @@ def group_scatter(
     segment_colours = _colour_map(segments) if has_industry else {}
 
     has_kam = KAM in data.columns and data[KAM].notna().any()
-    kam_values = sorted(data[KAM].dropna().unique().tolist()) if has_kam else []
+    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
 
     fig = go.Figure()
     trace_segments: list[pd.Series] = []
@@ -748,7 +748,7 @@ def item_scatter(
     group_colours = _colour_map(sorted(data[GROUP].dropna().unique().tolist()))
 
     has_kam = KAM in data.columns and data[KAM].notna().any()
-    kam_values = sorted(data[KAM].dropna().unique().tolist()) if has_kam else []
+    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
 
     fig = go.Figure()
     category_order: list[str] = []

@@ -60,6 +60,9 @@ Disse er valgfrie og aktiverer hver sin funktion:
 | `Industry_segment` | farve- og kantlogik på kundegruppe-plottet |
 | `KAM` | tænd/sluk-knapper pr. key account manager på begge plots |
 
+Manglende obligatoriske kolonner giver en fejlbesked der siger præcis hvilke
+der mangler, og hvad der faktisk stod i overskriftsrækken.
+
 ## Hvordan data behandles
 
 1. **Frasortering** – perioder efter dags dato (budgettal), ekskluderede
@@ -77,7 +80,9 @@ Disse er valgfrie og aktiverer hver sin funktion:
 7. **Kundekategori** – A/B/C/D ud fra turnover-båndet, med `+`/`-` alt efter om
    GM% når kategoriens krav.
 8. **KAM** – kunden tildeles den key account manager der står på den seneste
-   aktivitet, så et skift undervejs slår igennem.
+   aktivitet, så et skift undervejs slår igennem. Store og små bogstaver er
+   uden betydning (`PHA` og `pHA` er samme person), og kunder uden KAM samles
+   under `(Blank)`.
 9. **Output** – HTML-plots og Excel-rapport.
 
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et

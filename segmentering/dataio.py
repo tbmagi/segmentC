@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Iterable
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -47,6 +47,10 @@ TURNOVER_TYPE = "Turnover type"
 FISCAL_YEAR = "Fiscal year"
 INDUSTRY_SEGMENT = "Industry_segment"
 KAM = "KAM"
+
+#: Kunder uden nogen KAM samles under denne etiket, så de får deres egen knap
+#: frem for at forsvinde fra opdelingen.
+BLANK_KAM = "(Blank)"
 
 OPTIONAL_COLUMNS = [TURNOVER_TYPE, FISCAL_YEAR, INDUSTRY_SEGMENT, KAM]
 
@@ -116,6 +120,50 @@ class ReferenceDates:
 # --- Indlæsning --------------------------------------------------------------
 
 
+class MissingColumnsError(ValueError):
+    """
+    Rejses når Excel-filen ikke indeholder alle de obligatoriske kolonner.
+
+    Beskeden er skrevet til at kunne vises direkte for brugeren: den siger
+    hvad der mangler, hvad der rent faktisk stod i overskriftsrækken, og hvad
+    man typisk gør ved det.
+    """
+
+    def __init__(
+        self,
+        missing: Iterable[str],
+        found: Iterable[str],
+        header_row: int | None = None,
+    ) -> None:
+        self.missing = list(missing)
+        self.found = list(found)
+        self.header_row = header_row
+        super().__init__(self._build_message())
+
+    def _build_message(self) -> str:
+        lines = ["Excel-filen mangler obligatoriske kolonner.", "", "Mangler:"]
+        lines += [f"  • {name}" for name in self.missing]
+        where = (
+            f"række {self.header_row + 1}"
+            if self.header_row is not None
+            else "overskriftsrækken"
+        )
+        lines += ["", f"Fundet i {where}:"]
+        lines += (
+            [f"  • {name}" for name in self.found]
+            if self.found
+            else ["  (ingen kolonnenavne kunne genkendes)"]
+        )
+        lines += [
+            "",
+            "Store og små bogstaver er lige gyldige, og mellemrum omkring "
+            "navnet betyder ingenting —",
+            "men stavemåden skal ellers passe. Tjek at kolonnen ikke er "
+            "omdøbt eller udeladt i udtrækket.",
+        ]
+        return "\n".join(lines)
+
+
 def locate_header_row(frame: pd.DataFrame) -> tuple[int | None, list[str]]:
     """
     Finder den række der indeholder kolonneoverskrifterne.
@@ -170,12 +218,7 @@ def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
                 if header_row is not None
                 else []
             )
-            raise ValueError(
-                "Kunne ikke finde en række med alle de påkrævede kolonner i "
-                f"de første {HEADER_SCAN_ROWS} rækker af filen.\n"
-                f"Følgende mangler: {missing}\n"
-                f"Bedste bud var række {(header_row or 0) + 1}, som indeholdt: {found}"
-            )
+            raise MissingColumnsError(missing, found, header_row)
         if header_row:
             log(f"  Fandt kolonneoverskrifter i række {header_row + 1}")
         df = pd.read_excel(path, header=header_row)
@@ -208,10 +251,9 @@ def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
         elif found != canonical:
             rename_map[found] = canonical
     if missing:
-        raise ValueError(
-            f"Følgende kolonner mangler i Excel-filen: {missing}\n"
-            f"Fundne kolonner: {list(df.columns)}"
-        )
+        # Sikkerhedsnet: overskriftsrækken blev godkendt ovenfor, så her burde
+        # intet mangle. Sker det alligevel, får brugeren samme tydelige besked.
+        raise MissingColumnsError(missing, list(df.columns), header_row)
     if rename_map:
         df = df.rename(columns=rename_map)
 

@@ -30,13 +30,14 @@ from .dataio import (
     HAS_MANUAL_SUFFIX,
     ITEM_NO,
     ITEM_TYPE,
+    KAM,
     ReferenceDates,
     apply_row_filters,
     load_sales_data,
     turnover_type_mask,
 )
 from .excel_report import ExcelReport, parameter_sheet
-from .metrics import drop_dead_items, group_metrics, item_metrics
+from .metrics import drop_dead_items, group_metrics, item_metrics, kam_by_group
 from .outliers import filter_outliers
 from . import plots
 
@@ -87,6 +88,13 @@ def annotate(df: pd.DataFrame, cfg: Config, dates: ReferenceDates, log: Log) -> 
 
     customer_types = customer_types_by_group(annotated, dates, cfg.new_fiscal_year)
     annotated[CUSTOMER_TYPE_GLOBAL] = annotated[GROUP].map(customer_types)
+
+    # KAM opløses ÉN gang på hele datasættet og skrives tilbage i kolonnen.
+    # Gjorde hvert udsnit det selv, kunne den valgte stavemåde variere mellem
+    # sinter- og støbe-plottet, fordi den nyeste række ikke er den samme i de
+    # to udsnit. Nu står den samme person som det samme overalt.
+    if KAM in annotated.columns:
+        annotated[KAM] = annotated[GROUP].map(kam_by_group(annotated))
 
     distribution = pd.Series(customer_types).value_counts().to_dict()
     log(f"Kundetype-fordeling: {distribution}")

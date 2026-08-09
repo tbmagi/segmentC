@@ -121,6 +121,13 @@ def sample_items():
     )
 
 
+def test_the_x_axis_is_labelled_the_same_on_both_plots():
+    group = group_scatter(sample_groups(), Config(), DATES)
+    item = item_scatter(sample_items(), Config(), DATES)
+    assert group.layout.xaxis.title.text == "Gross Margin (%)"
+    assert item.layout.xaxis.title.text == "Gross Margin (%)"
+
+
 def test_zones_do_not_dictate_the_item_axes():
     fig = item_scatter(sample_items(), Config(), DATES)
     assert fig.layout.xaxis.range[1] < X_MAX_ZONE / 10

@@ -77,6 +77,25 @@ def split_list(text: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def describe_failure(exc: BaseException) -> str:
+    """
+    Laver en besked brugeren kan handle på.
+
+    Fejl vi selv rejser undervejs — manglende kolonner, en fil der ikke kan
+    åbnes, en ugyldig indstilling — er allerede formuleret på dansk og vises
+    som de er. Alt andet er en programfejl, og der henvises til loggen, hvor
+    hele udskriften står.
+    """
+    if isinstance(exc, (ValueError, FileNotFoundError, PermissionError, KeyError)):
+        message = str(exc).strip()
+        if message:
+            return message
+    return (
+        f"Der opstod en uventet fejl: {type(exc).__name__}.\n\n"
+        "Hele fejlbeskeden står i loggen nederst i vinduet."
+    )
+
+
 class SegmenteringApp(tk.Tk):
     """Tkinter-vinduet der styrer en analyse-kørsel."""
 
@@ -198,7 +217,9 @@ class SegmenteringApp(tk.Tk):
             "  • Fiscal year       – til ny-kunde klassifikation\n"
             "  • Industry_segment  – til farvelogik på plottet\n"
             "  • KAM               – giver tænd/sluk-knapper pr. key account\n"
-            "                        manager på begge plots\n\n"
+            "                        manager på begge plots. Store og små\n"
+            "                        bogstaver er uden betydning, og kunder\n"
+            "                        uden KAM samles under '(Blank)'\n\n"
             "Rækker med en periode efter 'Dags dato' regnes som budgettal og "
             "udelades.",
         ).grid(row=0, column=3, padx=(4, 0))
@@ -901,11 +922,11 @@ class SegmenteringApp(tk.Tk):
         """
         try:
             run_analysis(cfg, log=self.log)
-        except Exception:
+        except Exception as exc:
             self.log(traceback.format_exc())
-            self._events.put(("done", False))
+            self._events.put(("done", describe_failure(exc)))
         else:
-            self._events.put(("done", True))
+            self._events.put(("done", None))
 
     def _pump_events(self) -> None:
         """
@@ -913,32 +934,33 @@ class SegmenteringApp(tk.Tk):
 
         Kaldes kun fra hovedtråden, så alle widget-opdateringer sker der.
         """
-        finished_with: bool | None = None
+        finished = False
+        error: str | None = None
         try:
             while True:
                 kind, payload = self._events.get_nowait()
                 if kind == "log":
                     self._append_log(payload)
                 elif kind == "done":
-                    finished_with = bool(payload)
+                    finished = True
+                    error = payload
+
         except queue.Empty:
             pass
 
-        if finished_with is None:
-            self.after(self.POLL_INTERVAL_MS, self._pump_events)
+        if finished:
+            self._finish(error)
         else:
-            self._finish(success=finished_with)
+            self.after(self.POLL_INTERVAL_MS, self._pump_events)
 
-    def _finish(self, success: bool) -> None:
+    def _finish(self, error: str | None) -> None:
         self.run_button.configure(state="normal")
-        if success:
+        if error is None:
             self.status_label.configure(text="✅ Analyse færdig")
             self._append_log("Analyse afsluttet uden fejl.")
         else:
-            self.status_label.configure(text="❌ Fejl – se log")
-            messagebox.showerror(
-                "Analyse fejlede", "Analysen fejlede. Se loggen for detaljer."
-            )
+            self.status_label.configure(text="❌ Analysen fejlede")
+            messagebox.showerror("Analysen kunne ikke gennemføres", error)
 
     # -- Log ------------------------------------------------------------------
 

@@ -5,17 +5,19 @@ import pytest
 
 from segmentering.config import Config
 from segmentering.dataio import (
+    BLANK_KAM,
     GROUP,
     KAM,
     PERIOD,
     REQUIRED_COLUMNS,
+    MissingColumnsError,
     ReferenceDates,
     apply_row_filters,
     load_sales_data,
     locate_header_row,
     parse_period,
 )
-from segmentering.metrics import kam_by_group
+from segmentering.metrics import kam_by_group, sort_kams
 
 QUIET = lambda _message: None
 
@@ -95,8 +97,41 @@ def test_a_file_without_the_required_columns_is_rejected(tmp_path):
     workbook.active.append([1, 2, 3])
     path = tmp_path / "forkert.xlsx"
     workbook.save(path)
-    with pytest.raises(ValueError, match="Kunne ikke finde en række"):
+    with pytest.raises(MissingColumnsError):
         load_sales_data(str(path), QUIET)
+
+
+def test_a_missing_column_is_named_in_the_error(tmp_path):
+    """
+    Fjernes en enkelt obligatorisk kolonne, skal fejlen sige præcis hvilken —
+    ikke bare at noget gik galt.
+    """
+    rows = [data_row()]
+    del rows[0]["Local_GP_DKK"]
+    path = write_workbook(tmp_path / "mangler.xlsx", rows, junk_rows=3)
+    with pytest.raises(MissingColumnsError) as caught:
+        load_sales_data(str(path), QUIET)
+
+    error = caught.value
+    assert error.missing == ["Local_GP_DKK"]
+    assert "Local_GP_DKK" in str(error)
+    # Beskeden skal også vise hvad der FAKTISK stod, så en stavefejl kan ses
+    assert "Turnover DKK" in str(error)
+    assert error.header_row == 3
+
+
+def test_the_error_message_is_readable_for_a_user():
+    error = MissingColumnsError(["Turnover DKK"], ["Statistics group"], header_row=9)
+    text = str(error)
+    assert text.startswith("Excel-filen mangler obligatoriske kolonner.")
+    assert "række 10" in text  # 1-indekseret for brugeren
+    assert "Turnover DKK" in text
+
+
+def test_several_missing_columns_are_all_listed():
+    error = MissingColumnsError(["A", "B", "C"], [], None)
+    assert all(name in str(error) for name in ("A", "B", "C"))
+    assert "ingen kolonnenavne" in str(error)
 
 
 # --- Budgettal efter dags dato -----------------------------------------------
@@ -204,3 +239,69 @@ def test_missing_kam_on_the_latest_row_falls_back_to_the_last_known():
 def test_no_kam_column_gives_an_empty_lookup():
     df = pd.DataFrame({GROUP: ["KUNDE A"], PERIOD: [parse_period("2025-01")]})
     assert kam_by_group(df) == {}
+
+
+# --- KAM: store og små bogstaver ---------------------------------------------
+
+
+def test_kam_is_case_insensitive():
+    """'PHA' og 'pHA' er samme person og skal ende under samme knap."""
+    df = kam_frame(
+        [("KUNDE A", "2025-01", "PHA"), ("KUNDE B", "2025-02", "pHA")]
+    )
+    result = kam_by_group(df)
+    assert len(set(result.values())) == 1, f"to stavemåder blev til to KAM'er: {result}"
+
+
+def test_the_newest_spelling_becomes_the_label():
+    """Samme 'seneste vinder'-regel som ellers afgør hvilken stavemåde der vises."""
+    df = kam_frame(
+        [("KUNDE A", "2025-01", "pha"), ("KUNDE B", "2025-09", "PHA")]
+    )
+    assert set(kam_by_group(df).values()) == {"PHA"}
+
+
+def test_surrounding_spaces_do_not_split_a_kam():
+    df = kam_frame(
+        [("KUNDE A", "2025-01", " PHA "), ("KUNDE B", "2025-02", "PHA")]
+    )
+    assert len(set(kam_by_group(df).values())) == 1
+
+
+def test_case_only_differs_within_one_customer():
+    df = kam_frame(
+        [("KUNDE A", "2025-01", "pha"), ("KUNDE A", "2025-06", "PHA")]
+    )
+    assert kam_by_group(df) == {"KUNDE A": "PHA"}
+
+
+# --- KAM: tomme værdier ------------------------------------------------------
+
+
+def test_customers_without_any_kam_are_labelled_blank():
+    df = kam_frame(
+        [("KUNDE A", "2025-01", "PHA"), ("KUNDE B", "2025-01", None)]
+    )
+    assert kam_by_group(df) == {"KUNDE A": "PHA", "KUNDE B": BLANK_KAM}
+
+
+def test_an_empty_string_counts_as_blank():
+    df = kam_frame([("KUNDE A", "2025-01", "   ")])
+    assert kam_by_group(df) == {"KUNDE A": BLANK_KAM}
+
+
+def test_all_customers_blank_when_the_column_is_empty():
+    df = kam_frame([("KUNDE A", "2025-01", None), ("KUNDE B", "2025-01", None)])
+    assert set(kam_by_group(df).values()) == {BLANK_KAM}
+
+
+def test_blank_sorts_last():
+    assert sort_kams(["Søren", BLANK_KAM, "Anders"]) == [
+        "Anders",
+        "Søren",
+        BLANK_KAM,
+    ]
+
+
+def test_kam_sorting_ignores_case():
+    assert sort_kams(["pha", "ABC"]) == ["ABC", "pha"]

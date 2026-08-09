@@ -10,7 +10,7 @@ skjult afhængighed af global opsætning.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -19,6 +19,7 @@ from dateutil.relativedelta import relativedelta
 from .classify import classify_customer_category
 from .config import Config
 from .dataio import (
+    BLANK_KAM,
     GROSS_PROFIT,
     GROUP,
     INDUSTRY_SEGMENT,
@@ -298,6 +299,19 @@ def group_metrics(
     return per_group
 
 
+def _clean_kam(value: object) -> str | None:
+    """Trimmer en KAM-værdi. Tomt eller manglende giver None."""
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def sort_kams(values: Iterable[object]) -> list[object]:
+    """Sorterer KAM-navne alfabetisk med '(Blank)' sidst."""
+    return sorted(values, key=lambda v: (v == BLANK_KAM, str(v).casefold()))
+
+
 def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
     """
     Finder den ansvarlige KAM pr. kundegruppe.
@@ -307,17 +321,43 @@ def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
     der står på den SENESTE aktivitet, så plottet viser hvem der har kunden
     i dag frem for hvem der engang havde den.
 
-    Kolonnen er valgfri. Findes den ikke, returneres et tomt opslag.
+    Store og små bogstaver er uden betydning: 'PHA' og 'pHA' er samme person
+    og havner under samme knap. Som visningsform bruges den stavemåde der står
+    på den nyeste række — samme "seneste vinder"-regel som ellers.
+
+    Kunder helt uden KAM får ``BLANK_KAM``. Står feltet tomt på de nyeste
+    rækker, men har kunden en KAM længere tilbage, bruges den sidst kendte —
+    et tomt felt er som regel manglende data, ikke en kunde uden ansvarlig.
+
+    Kolonnen er valgfri. Findes den ikke, returneres et tomt opslag, og
+    KAM-opdelingen springes helt over.
     """
     column = find_column(df, KAM)
     if column is None:
         return {}
-    known = df[[GROUP, PERIOD, column]].dropna(subset=[column])
-    known = known[known[column].astype(str).str.strip() != ""]
-    if known.empty:
-        return {}
-    # sort_values er stabil, så den sidste række pr. gruppe er den nyeste.
-    return known.sort_values(PERIOD).groupby(GROUP)[column].last().to_dict()
+
+    all_groups = df[GROUP].dropna().unique()
+    working = df[[GROUP, PERIOD, column]].copy()
+    working["_kam"] = working[column].map(_clean_kam)
+    named = working[working["_kam"].notna()]
+    if named.empty:
+        return {group: BLANK_KAM for group in all_groups}
+
+    # sort_values er stabil, så den sidste række er den nyeste.
+    ordered = named.sort_values(PERIOD)
+
+    # Kanonisk stavemåde pr. person: den der står på den nyeste række.
+    canonical: dict[str, str] = {}
+    for value in ordered["_kam"]:
+        canonical[value.casefold()] = value
+
+    latest = ordered.groupby(GROUP)["_kam"].last()
+    result: dict[str, object] = {
+        group: canonical[value.casefold()] for group, value in latest.items()
+    }
+    for group in all_groups:
+        result.setdefault(group, BLANK_KAM)
+    return result
 
 
 def _industry_segment_by_group(df: pd.DataFrame) -> dict[str, object]:
