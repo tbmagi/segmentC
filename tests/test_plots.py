@@ -15,6 +15,7 @@ from segmentering.metrics import (
 )
 from segmentering.plots import (
     BUTTON_ROW_GAP,
+    BUTTON_ROW_PX,
     TOGGLE_GUARD,
     RESET_DIMENSION,
     RESET_LABEL,
@@ -274,6 +275,18 @@ def test_the_reset_row_has_no_heading():
     assert "" not in button_rows(fig)
 
 
+def test_the_reset_button_sits_below_every_filter_row():
+    """Den nulstiller rækkerne ovenover, så den hører hjemme nederst."""
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(sample_items(), Config(), DATES),
+    ):
+        menus = fig.layout.updatemenus
+        reset = menus[fig.layout.meta["reset"]]
+        assert all(m.y >= reset.y for m in menus)
+        assert any(m.y > reset.y for m in menus), "der er ingen rækker ovenover"
+
+
 def test_metadata_separates_the_reset_menu_from_the_filters():
     meta = filter_metadata([RESET_DIMENSION, "kam", None, "kategori"])
     assert meta["reset"] == 0
@@ -369,7 +382,7 @@ def test_buttons_stay_inside_the_plot_width():
 
 def test_rows_are_stacked_downwards():
     menus, rows = flow_button_menus([button("Ganske langt navn") for _ in range(8)], -0.14)
-    ys = sorted({round(m["y"], 4) for m in menus}, reverse=True)
+    ys = sorted({m["y"] for m in menus}, reverse=True)
     assert ys[0] == pytest.approx(-0.14)
     for earlier, later in zip(ys, ys[1:]):
         assert earlier - later == pytest.approx(BUTTON_ROW_GAP)
@@ -442,8 +455,7 @@ def test_a_short_list_stays_on_one_row():
     assert len({m["y"] for m in menus}) == 1
 
 
-def test_bottom_margin_grows_with_the_number_of_rows():
-    """Knapperne må ikke havne uden for figuren når de fylder flere rækker."""
+def many_segments():
     many = pd.concat(
         [
             sample_groups().assign(**{INDUSTRY_SEGMENT: f"Branchesegment nummer {i}"})
@@ -452,6 +464,31 @@ def test_bottom_margin_grows_with_the_number_of_rows():
         ignore_index=True,
     )
     many[GROUP] = [f"KUNDE {i}" for i in range(len(many))]
+    return many
+
+
+def test_bottom_margin_grows_with_the_number_of_rows():
+    """Knapperne må ikke havne uden for figuren når de fylder flere rækker."""
     one_row = group_scatter(sample_groups(), Config(), DATES)
-    several = group_scatter(many, Config(), DATES)
+    several = group_scatter(many_segments(), Config(), DATES)
     assert several.layout.margin.b > one_row.layout.margin.b
+
+
+def test_rows_keep_their_height_no_matter_how_many_there_are():
+    """
+    Afstanden mellem knaprækker er i paper-enheder, der spænder over
+    PLOTOMRÅDETS højde. Blev rækkerne klemt ind i figuren, skrumpede området
+    for hver ny række, og den faste afstand svarede til færre og færre pixels
+    — indtil rækkerne lå oven i hinanden. Figuren skal vokse i stedet.
+    """
+    for fig in (
+        group_scatter(sample_groups(), Config(), DATES),
+        group_scatter(many_segments(), Config(), DATES),
+        item_scatter(sample_items(), Config(), DATES),
+    ):
+        layout = fig.layout
+        area = layout.height - layout.margin.t - layout.margin.b
+        assert area * BUTTON_ROW_GAP == pytest.approx(BUTTON_ROW_PX)
+        # Den nederste række skal stadig være inden for figuren.
+        lowest = min(m.y for m in layout.updatemenus)
+        assert abs(lowest) * area + BUTTON_ROW_PX <= layout.margin.b

@@ -20,7 +20,6 @@ from segmentering import Config
 from segmentering.config import (
     Band,
     clear_defaults,
-    dated_output_directory,
     load_defaults,
     save_defaults,
     settings_path,
@@ -115,7 +114,9 @@ class SegmenteringApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Kundesegmentering")
-        self.minsize(760, 650)
+        # Ingen højde sættes: forsiden er kort nok til at vinduet kan slutte
+        # tæt om sit indhold. Bindes højden fast, står resten som en tom flade.
+        self.minsize(720, 1)
         self.resizable(True, True)
 
         # Beskeder fra beregningstråden til hovedtråden.
@@ -190,8 +191,13 @@ class SegmenteringApp(tk.Tk):
         Alt andet ligger bag "Indstillinger", så vinduet ikke skræmmer nye
         brugere væk. Indstillingerne deler de samme variabler, så en ændring
         slår igennem med det samme — der er ikke noget at gemme eller bekræfte.
+
+        Siden ruller ikke: den fylder få hundrede pixels, og en rulbar side
+        ville tvinge vinduet til at have en højde af sig selv — med en tom
+        hvid flade under indholdet.
         """
-        page = ScrollableFrame(self)
+        page = ttk.Frame(self)
+        page.pack(fill="x", side="top")
 
         toolbar = ttk.Frame(page, padding=(10, 6))
         toolbar.pack(fill="x", side="top")
@@ -253,7 +259,7 @@ class SegmenteringApp(tk.Tk):
         ttk.Entry(frame, textvariable=self.var_new_fiscal_year, width=12).grid(
             row=3, column=1, sticky="w", pady=4
         )
-        ttk.Label(frame, text="fx 2026/27", foreground=HINT_COLOUR).grid(
+        ttk.Label(frame, text="fx 2026/2027", foreground=HINT_COLOUR).grid(
             row=3, column=2, sticky="w", padx=6
         )
         help_icon(
@@ -266,37 +272,12 @@ class SegmenteringApp(tk.Tk):
             "Lad feltet stå tomt for ikke at bruge regnskabsår-logikken.",
         ).grid(row=3, column=4, padx=(4, 0))
 
-        self.label_customer_types = ttk.Label(
-            frame, text="", foreground="#333", justify="left", font=("Helvetica", 9)
-        )
-        self.label_customer_types.grid(
-            row=4, column=0, columnspan=5, sticky="w", pady=(10, 2)
-        )
-        for variable in (
-            self.var_reference_date,
-            self.var_existing_months,
-            self.var_new_fiscal_year,
-        ):
-            variable.trace_add("write", lambda *_: self._update_customer_type_summary())
-
         frame.columnconfigure(1, weight=1)
 
     def _build_settings_bar(self, parent: tk.Widget) -> None:
         bar = ttk.Frame(parent, padding=(10, 0))
         bar.pack(fill="x")
         ttk.Button(bar, text="⚙  Indstillinger…", command=self.open_settings).pack(side="left")
-        self.label_output_hint = ttk.Label(bar, text="", foreground=HINT_COLOUR)
-        self.label_output_hint.pack(side="left", padx=12)
-        self.var_output_dir.trace_add("write", lambda *_: self._update_output_hint())
-
-    def _update_output_hint(self) -> None:
-        if not hasattr(self, "label_output_hint"):
-            return
-        chosen = self.var_output_dir.get().strip()
-        self.label_output_hint.configure(
-            text=f"Gemmer i: {chosen}" if chosen
-            else f"Gemmer i: {os.path.basename(dated_output_directory())} (ved siden af programmet)"
-        )
 
     # -- Indstillingsvinduet --------------------------------------------------
 
@@ -809,7 +790,11 @@ class SegmenteringApp(tk.Tk):
         self.progress.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         self.progress.grid_remove()
 
-        self.step_label = ttk.Label(frame, text="", foreground=HINT_COLOUR)
+        # Wraplength holder en lang sti inden for vinduets bredde i stedet for
+        # at trække vinduet ud i siden når analysen er færdig.
+        self.step_label = ttk.Label(
+            frame, text="", foreground=HINT_COLOUR, wraplength=660, justify="left"
+        )
         self.step_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
         frame.columnconfigure(2, weight=1)
@@ -917,8 +902,6 @@ class SegmenteringApp(tk.Tk):
 
         self._update_gm_state()
         self._update_outlier_state()
-        self._update_customer_type_summary()
-        self._update_output_hint()
 
     def _build_config(self) -> Config:
         """Læser skærmen til et ``Config``. Rejser ValueError ved ugyldige felter."""
@@ -1002,32 +985,6 @@ class SegmenteringApp(tk.Tk):
         )
         self.label_outlier_hint.configure(
             foreground=HINT_COLOUR if enabled else "#aaa"
-        )
-
-    def _update_customer_type_summary(self) -> None:
-        """Skriver en letlæselig forklaring af de tre kundetyper ud fra felterne."""
-        if not self._widget_alive("label_customer_types"):
-            return
-        reference = self.var_reference_date.get().strip() or "(dags dato)"
-        try:
-            months = int(self.var_existing_months.get())
-        except (tk.TclError, ValueError):
-            months = 0
-        fiscal_year = self.var_new_fiscal_year.get().strip()
-
-        new_line = (
-            f"Ny:           aktivitet KUN i 'Ny-regnskabsår' ({fiscal_year}) "
-            "og ingen tidligere historik"
-            if fiscal_year
-            else "Ny:           aktivitet efter 'Dags dato' og ingen tidligere historik"
-        )
-        self.label_customer_types.configure(
-            text=(
-                "Eksisterende: seneste aktivitet inden for 'Eksisterende kunde "
-                f"vindue' ({months} måneder bagud fra 'Dags dato' {reference})\n"
-                f"{new_line}\n"
-                "Tidligere:    al aktivitet ligger uden for begge ovenstående vinduer"
-            )
         )
 
     # -- Fil-dialoger ---------------------------------------------------------

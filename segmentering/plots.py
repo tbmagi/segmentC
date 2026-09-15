@@ -61,16 +61,30 @@ PLOT_HEIGHT = 750
 # tegnet den, så den anslås ud fra etikettens længde — bevidst en anelse for
 # rundhåndet, så knapper hellere står lidt spredt end oven i hinanden.
 BUTTON_CHAR_PX = 6.5
-BUTTON_PADDING_PX = 30
-BUTTON_SPACING_PX = 10
+BUTTON_PADDING_PX = 34
+BUTTON_SPACING_PX = 14
 # Knappernes x-koordinat er i "paper"-enheder, der spænder over PLOTOMRÅDET —
 # ikke hele figuren. Området er smallere end figuren og skrumper yderligere
 # når legenden er bred (item-plottet viser kundenavne). Bredden kendes først
 # ved tegning, så her regnes med et bevidst lavt skøn: så bliver knapperne
 # hellere spredt for godt ud og ombrudt for tidligt end lagt oven i hinanden.
 BUTTON_AREA_PX = 640
-BUTTON_ROW_GAP = 0.08  # lodret afstand mellem knaprækker (paper-koordinater)
-BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
+
+# Lodret er det samme problem, bare værre: paper-enheden spænder over
+# plotområdets HØJDE, og den højde skrumpede før med hver knaprække, fordi
+# rækkerne blev klemt ind i figuren via bundmargenen. En fast paper-afstand
+# svarede derfor til færre og færre pixels, og til sidst lå rækkerne oven i
+# hinanden. Nu lægges rækkerne TIL figurens højde, så plotområdet er lige højt
+# uanset antallet af rækker — og afstanden mellem dem kan regnes i pixels.
+BUTTON_ROW_PX = 46  # lodret plads pr. knaprække
+BUTTON_FIRST_ROW_PX = 70  # fra x-aksen ned til første række (plads til aksetitlen)
+BUTTON_BASE_MARGIN_PX = 90  # bundmargen før rækkerne lægges til
+PLOT_TOP_MARGIN = 100  # plads til titel og undertitel
+
+#: Plotområdets højde — den samme uanset hvor mange knaprækker der kommer til.
+PLOT_AREA_PX = PLOT_HEIGHT - PLOT_TOP_MARGIN - BUTTON_BASE_MARGIN_PX
+BUTTON_ROW_GAP = BUTTON_ROW_PX / PLOT_AREA_PX
+BUTTON_FIRST_ROW_Y = -BUTTON_FIRST_ROW_PX / PLOT_AREA_PX
 
 # Binder alle knapper i en menu sig til ÉN egenskab, opfatter Plotly det som en
 # "simpel binding" og sætter en overvåger på egenskaben. Overvågeren retter
@@ -86,8 +100,19 @@ BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
 # er kun fremhæv-knapperne der har brug for vagten.
 TOGGLE_GUARD = ("marker.opacity", 1)
 
-#: Knappen der slår alle filterrækker fra på én gang.
+#: Knappen der slår alle filterrækker fra på én gang. Den står nederst, under
+#: de rækker den nulstiller.
 RESET_LABEL = "↺  Nulstil alle filtre"
+
+
+def button_area_margin(rows: int) -> int:
+    """Bundmargen der giver plads til ``rows`` knaprækker."""
+    return BUTTON_BASE_MARGIN_PX + rows * BUTTON_ROW_PX
+
+
+def figure_height(rows: int) -> int:
+    """Figurens højde: knaprækkerne lægges til i stedet for at klemme plottet."""
+    return PLOT_HEIGHT + rows * BUTTON_ROW_PX
 
 
 def _danish_thousands(value: float) -> str:
@@ -291,7 +316,7 @@ def toggle_buttons(
 #: filterknapperne og sætter synligheden ud fra ALLE rækker under ét.
 _FILTER_SCRIPT = """
 (function () {
-  var RESET_LABEL = ";↺  Nulstil alle filtre"
+  var RESET_LABEL = "__RESET_LABEL__";
   var gd = document.getElementById('{plot_id}');
   if (!gd) { return; }
   var meta = (gd.layout && gd.layout.meta) || {};
@@ -361,9 +386,17 @@ def reset_button() -> dict:
 
 
 def filter_script(fig: "go.Figure") -> str | None:
-    """Returnerer filter-scriptet hvis figuren har filterknapper."""
+    """
+    Returnerer filter-scriptet hvis figuren har filterknapper.
+
+    Etiketten på nulstil-knappen sættes ind her, så den kun står ét sted i
+    koden — scriptet genkender knappen på teksten hvis menu-identiteten
+    skulle glippe.
+    """
     meta = fig.layout.meta or {}
-    return _FILTER_SCRIPT if meta.get("filters") else None
+    if not meta.get("filters"):
+        return None
+    return _FILTER_SCRIPT.replace("__RESET_LABEL__", RESET_LABEL)
 
 
 def stack_button_rows(
@@ -681,7 +714,6 @@ def group_scatter(
 
     types_present = [t for t in CUSTOMER_TYPE_ORDER if t in trace_types]
     button_groups: list[tuple[str, str | None, list[dict]]] = [
-        ("", RESET_DIMENSION, [reset_button()]),
         ("Vis/skjul kundetype:", "kundetype", toggle_buttons(types_present, trace_types)),
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
@@ -697,12 +729,13 @@ def group_scatter(
                 _segment_highlight_buttons(segments, trace_segments),
             )
         )
+    # Nulstil står nederst, under de rækker den nulstiller.
+    button_groups.append(("", RESET_DIMENSION, [reset_button()]))
 
     menus, row_labels, button_rows, dimensions = stack_button_rows(
-        button_groups, y_start=-0.14
+        button_groups, y_start=BUTTON_FIRST_ROW_Y
     )
     annotations = annotations + row_labels
-    bottom_margin = 40 if not button_rows else 65 + button_rows * BUTTON_ROW_MARGIN_PX
 
     subtitle_extra = title_suffix
     if has_industry and not colour_by_segment:
@@ -731,9 +764,9 @@ def group_scatter(
         ),
         hovermode="closest",
         plot_bgcolor="white",
-        margin=dict(b=bottom_margin),
+        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
         width=PLOT_WIDTH,
-        height=PLOT_HEIGHT,
+        height=figure_height(button_rows),
         **_axes(
             cfg,
             f"Samlet Turnover DKK ({cfg.turnover_window_months} mdr. vindue)",
@@ -879,18 +912,18 @@ def item_scatter(
     default_level = present[0] if present else (levels[0] if levels else "A")
     shapes, zone_annotations = volume_zone_shapes(default_level, cfg)
 
-    # Knapperne under plottet stables: først kravniveau, så kategori-blokke og
-    # til sidst KAM.
+    # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
+    # så KAM — og nederst nulstil-knappen.
     level_label = "Volumenkrav:"
-    below_levels = -0.14 - BUTTON_ROW_GAP
+    below_levels = BUTTON_FIRST_ROW_Y - BUTTON_ROW_GAP
     button_groups: list[tuple[str, str | None, list[dict]]] = [
-        ("", RESET_DIMENSION, [reset_button()]),
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
     if has_kam and kam_values:
         button_groups.append(
             ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
         )
+    button_groups.append(("", RESET_DIMENSION, [reset_button()]))
 
     menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(
         button_groups, below_levels
@@ -899,7 +932,7 @@ def item_scatter(
     # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
     # udskifter hele annotations-listen, så uden dem forsvandt rækkernes
     # navne så snart man skiftede niveau.
-    static_annotations = [_row_label(level_label, -0.14)] + row_labels
+    static_annotations = [_row_label(level_label, BUTTON_FIRST_ROW_Y)] + row_labels
 
     level_buttons = []
     for level in levels:
@@ -927,7 +960,7 @@ def item_scatter(
                 active=levels.index(default_level) if default_level in levels else 0,
                 x=_label_width(level_label),
                 xanchor="left",
-                y=-0.14,
+                y=BUTTON_FIRST_ROW_Y,
                 yanchor="top",
                 pad={"r": 6, "t": 4},
                 buttons=level_buttons,
@@ -938,7 +971,7 @@ def item_scatter(
     dimensions = ([None] * (len(menus) - len(menus_below))) + dimensions_below
     annotations = zone_annotations + static_annotations
     # Plads til kravrækken plus de rækker de øvrige knapper fylder.
-    bottom_margin = 60 + (1 + rows_below) * BUTTON_ROW_MARGIN_PX
+    button_rows = 1 + rows_below
 
     fig.update_layout(
         title=dict(
@@ -952,7 +985,7 @@ def item_scatter(
         annotations=annotations,
         updatemenus=menus,
         meta=filter_metadata(dimensions),
-        margin=dict(b=bottom_margin),
+        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
             itemclick="toggle",
@@ -963,7 +996,7 @@ def item_scatter(
         hovermode="closest",
         plot_bgcolor="white",
         width=PLOT_WIDTH,
-        height=PLOT_HEIGHT,
+        height=figure_height(button_rows),
         **_axes(
             cfg,
             f"Turnover DKK – item niveau ({cfg.turnover_window_months} mdr. vindue)",

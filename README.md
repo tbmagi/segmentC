@@ -108,9 +108,9 @@ tænder du så for en kundetype, kommer kun den ene KAMs kunder tilbage — ikke
 alle kunder af den type. Et punkt vises kun hvis det slipper gennem hver
 eneste række.
 
-Knappen **↺ Nulstil alle filtre** øverst slår alle filterrækker fra på én
-gang. Valget af volumenkrav på item-plottet røres ikke — det er et radiovalg,
-ikke et filter.
+Nederst — under de rækker den nulstiller — sidder knappen **↺ Nulstil alle
+filtre**, der slår alle filterrækker fra på én gang. Valget af volumenkrav på
+item-plottet røres ikke — det er et radiovalg, ikke et filter.
 
 Bemærk at et klik i legenden er et engangsvalg: næste gang du rører en
 filterknap, beregnes synligheden forfra ud fra knapperne alene.
