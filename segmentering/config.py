@@ -63,13 +63,14 @@ def todays_reference_date(today: date | None = None) -> str:
 
 def todays_fiscal_year(today: date | None = None) -> str:
     """
-    Regnskabsåret som ÅÅÅÅ/ÅÅ — indeværende år og året efter.
+    Regnskabsåret som ÅÅÅÅ/ÅÅÅÅ — indeværende år og året efter.
 
-    Er det 2026, bliver det "2026/27". Formatet svarer til det der står i
-    kolonnen 'Fiscal year' i salgsudtrækket.
+    Er det 2026, bliver det "2026/2027". Formatet skal passe med det der står
+    i kolonnen 'Fiscal year' i salgsudtrækket; matcher det ikke, findes der
+    ingen nye kunder.
     """
     today = today or date.today()
-    return f"{today.year}/{str(today.year + 1)[2:]}"
+    return f"{today.year}/{today.year + 1}"
 
 
 def dated_output_directory(today: date | None = None) -> str:
@@ -294,7 +295,11 @@ class Config:
     outlier_std_threshold: float = 2.0
     outlier_metric: OutlierMetric = "gm"
 
-    # Produktionssted — bruges til DK/CN-knapperne i graferne
+    # Opdeling af plots
+    split_by_item_type: bool = True
+    geo_combined: bool = True
+    geo_cn: bool = False
+    geo_dk: bool = False
     cn_turnover_types: list[str] = field(
         default_factory=lambda: list(DEFAULT_CN_TURNOVER_TYPES)
     )
@@ -334,6 +339,10 @@ class Config:
         self.volume_zones = _normalise_zones(self.volume_zones)
 
     # -- Afledte værdier ------------------------------------------------------
+
+    @property
+    def uses_geo_split(self) -> bool:
+        return self.geo_cn or self.geo_dk
 
     @property
     def paths(self) -> OutputPaths:
@@ -395,6 +404,10 @@ class Config:
             raise ValueError(
                 "Farvelogik skal være 'kundetype' eller 'industry_segment', "
                 f"fik: {self.colour_by!r}"
+            )
+        if not (self.geo_combined or self.geo_cn or self.geo_dk):
+            raise ValueError(
+                "Mindst én geografisk opdeling skal være valgt (Samlet, CN eller DK)."
             )
         validate_bands(self.category_bands, "Kundekategori")
         for level, zones in self.volume_zones.items():

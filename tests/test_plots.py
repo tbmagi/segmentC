@@ -16,6 +16,9 @@ from segmentering.metrics import (
 from segmentering.plots import (
     BUTTON_ROW_GAP,
     TOGGLE_GUARD,
+    RESET_DIMENSION,
+    RESET_LABEL,
+    filter_metadata,
     filter_script,
     X_MAX_ZONE,
     Y_MAX_ZONE,
@@ -211,12 +214,12 @@ def test_every_trace_carries_its_filter_values():
     """Scriptet matcher på trace.meta, så hvert spor skal bære sine værdier."""
     fig = group_scatter(groups_with_categories(), Config(), DATES)
     by_name = {t.name: t.meta for t in fig.data}
-    assert by_name["KUNDE A"]["kundetype"] == "Eksisterende"
-    assert by_name["KUNDE A"]["kategori"] == "A+"
-    assert by_name["KUNDE A"]["kam"] == "PHA"
+    assert by_name["KUNDE A"] == {
+        "kundetype": "Eksisterende",
+        "kategori": "A+",
+        "kam": "PHA",
+    }
     assert by_name["KUNDE D"]["kam"] == "(Blank)"
-    # Emne-type og produktion er også filterdimensioner nu
-    assert {"emnetype", "geografi"} <= set(by_name["KUNDE A"])
 
 
 def test_the_figure_says_which_menu_filters_on_what():
@@ -244,6 +247,44 @@ def test_the_item_plot_also_declares_its_filters():
     assert set(filters.values()) <= {"kategori", "kam"}
     # Kravmenuen ligger forrest og er ikke et filter
     assert "0" not in filters
+
+
+def test_both_plots_offer_a_reset_button():
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(sample_items(), Config(), DATES),
+    ):
+        labels = [m.buttons[0].label for m in fig.layout.updatemenus]
+        assert RESET_LABEL in labels
+
+
+def test_the_reset_menu_is_pointed_out_but_is_not_a_filter():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    meta = fig.layout.meta
+    index = meta["reset"]
+    assert index is not None
+    assert fig.layout.updatemenus[index].buttons[0].label == RESET_LABEL
+    # Den må ikke selv tælle som en filterrække
+    assert str(index) not in meta["filters"]
+
+
+def test_the_reset_row_has_no_heading():
+    """Knappen forklarer sig selv, så rækken skal ikke have en overskrift."""
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert "" not in button_rows(fig)
+
+
+def test_metadata_separates_the_reset_menu_from_the_filters():
+    meta = filter_metadata([RESET_DIMENSION, "kam", None, "kategori"])
+    assert meta["reset"] == 0
+    assert meta["filters"] == {"1": "kam", "3": "kategori"}
+
+
+def test_the_script_knows_how_to_reset():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    script = filter_script(fig)
+    assert "Plotly.relayout" in script
+    assert "active" in script
 
 
 def test_the_filter_script_is_attached_when_there_are_filters():

@@ -39,7 +39,9 @@ results = run_analysis(cfg)
 ```
 
 `run_analysis` tager også en `log`-funktion, hvis fremdriftsteksten skal et
-andet sted hen end til `print`.
+andet sted hen end til `print`. Brugerfladen viser kun det seneste trin og en
+fremdriftsbjælke; hele udskriften lægges i `analyse-log.txt` ved siden af
+resultatet.
 
 ## Datakrav
 
@@ -106,32 +108,28 @@ tænder du så for en kundetype, kommer kun den ene KAMs kunder tilbage — ikke
 alle kunder af den type. Et punkt vises kun hvis det slipper gennem hver
 eneste række.
 
+Knappen **↺ Nulstil alle filtre** øverst slår alle filterrækker fra på én
+gang. Valget af volumenkrav på item-plottet røres ikke — det er et radiovalg,
+ikke et filter.
+
 Bemærk at et klik i legenden er et engangsvalg: næste gang du rører en
 filterknap, beregnes synligheden forfra ud fra knapperne alene.
 
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.
 
-## Analyseenheder
+## Udsnit og filnavne
 
-Emne-type (sinter/støb) og produktionssted (DK/CN) laver ikke hver sit sæt
-filer. De er egenskaber ved den enkelte analyseenhed og tændes og slukkes
-direkte i grafen sammen med kundetype, kategori og KAM.
+Analysen kører ét **udsnit** ad gangen. Udsnittene udspændes af tre valg i
+indstillingerne — emne-type, geografi og kundeudvalg — og hvert udsnit får sit
+eget sæt filer og Excel-faner, beregnet forfra på netop de rækker. Plottet og
+fanerne for et udsnit viser derfor altid de samme tal.
 
-En kunde med både sinter og støb bliver derfor til flere enheder med hver sin
-omsætning og margin. Kendetegn tilføjes kun når de er nødvendige for at
-skelne:
-
-| Kunden har | Enhedens navn |
-| --- | --- |
-| kun sinter, kun DK | `GRUNDFOSS` |
-| sinter og støb | `GRUNDFOSS (Sinter)`, `GRUNDFOSS (Støb)` |
-| sinter i både DK og CN | `GRUNDFOSS (DK)`, `GRUNDFOSS (CN)` |
-| begge dele | `GRUNDFOSS (Sinter, DK)` … |
-
-Varer der hverken er sinter eller støb samles under `Andet`, og
-turnover-typer der hverken er DK eller CN under `Øvrig` — så intet forsvinder
-uden at kunne ses.
+```
+<basis>_kundegruppe[_sinter|_stoebe][_cn|_dk][_eks].html
+<basis>_item[_sinter|_stoebe][_cn|_dk][_eks].html
+<basis>.xlsx
+```
 
 ## Hvor resultatet havner
 
@@ -151,7 +149,7 @@ Knappen **Gem som mine standardværdier** i indstillingsvinduet skriver
 gang programmet åbnes, og følger med hvis mappen kopieres til en kollega.
 
 Dags dato og ny-regnskabsår gemmes ikke — de udfyldes altid ud fra dagens
-dato. Er det 15-09-2026, står der `09-2026` og `2026/27`.
+dato. Er det 15-09-2026, står der `09-2026` og `2026/2027`.
 
 ## Projektets opbygning
 

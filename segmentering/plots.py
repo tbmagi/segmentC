@@ -26,7 +26,7 @@ from .config import (
     Band,
     Config,
 )
-from .dataio import GEO, GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
+from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
 from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM, sort_kams
 
 try:  # Plotly er en hård afhængighed for plots, men ikke for beregningerne.
@@ -86,6 +86,9 @@ BUTTON_ROW_MARGIN_PX = 45  # plads der skal reserveres pr. knaprække
 # er kun fremhæv-knapperne der har brug for vagten.
 TOGGLE_GUARD = ("marker.opacity", 1)
 
+#: Knappen der slår alle filterrækker fra på én gang.
+RESET_LABEL = "↺  Nulstil alle filtre"
+
 
 def _danish_thousands(value: float) -> str:
     return f"{value:,.0f}".replace(",", ".")
@@ -97,29 +100,6 @@ def _qualitative_palette() -> list[str]:
         + plotly_colours.qualitative.D3
         + plotly_colours.qualitative.Light24
     )
-
-
-#: De rækker af filterknapper begge grafer deler. Hver post er
-#: (kolonne i data, overskrift, dimensionsnavn til scriptet).
-SHARED_FILTER_ROWS = [
-    ("_emnetype", "Vis/skjul emne-type:", "emnetype"),
-    (GEO, "Vis/skjul produktion:", "geografi"),
-    (KAM, "Vis/skjul KAM:", "kam"),
-]
-
-ITEM_TYPE_ORDER = ["Sinter", "Støb", "Andet"]
-
-
-def _dimension_values(data: pd.DataFrame, column: str) -> list[object]:
-    """Værdierne i en kolonne, i en fast og læsbar rækkefølge."""
-    if column not in data.columns:
-        return []
-    values = data[column].dropna().unique().tolist()
-    if column == KAM:
-        return sort_kams(values)
-    if column == "_emnetype":
-        return [v for v in ITEM_TYPE_ORDER if v in values]
-    return sorted(values, key=lambda v: (v == "Øvrig", str(v)))
 
 
 def _colour_map(values: Sequence[object]) -> dict[object, str]:
@@ -311,9 +291,13 @@ def toggle_buttons(
 #: filterknapperne og sætter synligheden ud fra ALLE rækker under ét.
 _FILTER_SCRIPT = """
 (function () {
+  var RESET_LABEL = ";↺  Nulstil alle filtre"
   var gd = document.getElementById('{plot_id}');
   if (!gd) { return; }
-  var dimensionByMenu = ((gd.layout && gd.layout.meta) || {}).filters || {};
+  var meta = (gd.layout && gd.layout.meta) || {};
+  var dimensionByMenu = meta.filters || {};
+  var resetMenu = (meta.reset === undefined || meta.reset === null)
+                  ? null : Number(meta.reset);
   if (!Object.keys(dimensionByMenu).length) { return; }
 
   function apply() {
@@ -343,9 +327,37 @@ _FILTER_SCRIPT = """
     Plotly.restyle(gd, {visible: visible});
   }
 
-  gd.on('plotly_buttonclicked', function () { setTimeout(apply, 0); });
+  // Slår alle filterrækker fra og viser alt igen.
+  function reset() {
+    var update = {};
+    Object.keys(dimensionByMenu).forEach(function (index) {
+      update['updatemenus[' + index + '].active'] = -1;
+    });
+    update['updatemenus[' + resetMenu + '].active'] = -1;
+    Plotly.relayout(gd, update).then(apply);
+  }
+
+  function clickedMenuIndex(event) {
+    var menus = (gd._fullLayout && gd._fullLayout.updatemenus) || [];
+    for (var i = 0; i < menus.length; i++) {
+      if (menus[i] === event.menu) { return i; }
+    }
+    // Falder identiteten fra hinanden, kendes nulstil-knappen på sin tekst.
+    if (event.button && event.button.label === RESET_LABEL) { return resetMenu; }
+    return -1;
+  }
+
+  gd.on('plotly_buttonclicked', function (event) {
+    var index = clickedMenuIndex(event);
+    setTimeout(index === resetMenu && resetMenu !== null ? reset : apply, 0);
+  });
 })();
 """
+
+
+def reset_button() -> dict:
+    """Knappen der nulstiller alle filterrækker. Håndteres af scriptet."""
+    return dict(label=RESET_LABEL, method="skip", args=[{}])
 
 
 def filter_script(fig: "go.Figure") -> str | None:
@@ -377,14 +389,19 @@ def stack_button_rows(
         if not buttons:
             continue
         row_menus, rows = flow_button_menus(
-            buttons, y_start=y, x_offset=_label_width(label)
+            buttons, y_start=y, x_offset=_label_width(label) if label else 0.0
         )
         menus.extend(row_menus)
         dimensions.extend([dimension] * len(row_menus))
-        annotations.append(_row_label(label, y))
+        if label:
+            annotations.append(_row_label(label, y))
         y -= rows * BUTTON_ROW_GAP
         total_rows += rows
     return menus, annotations, total_rows, dimensions
+
+
+#: Markerer den menu der rummer nulstil-knappen.
+RESET_DIMENSION = "_reset"
 
 
 def filter_metadata(dimensions: Sequence[str | None]) -> dict:
@@ -392,14 +409,20 @@ def filter_metadata(dimensions: Sequence[str | None]) -> dict:
     Oversætter menu-rækkefølgen til det opslag scriptet skal bruge.
 
     Nøglen er menuens plads i ``updatemenus``; værdien er dimensionen.
-    Menuer uden dimension udelades.
+    Menuer uden dimension udelades. Nulstil-knappen er ikke et filter, men
+    dens plads skal med, så scriptet kan kende den igen.
     """
+    reset = next(
+        (i for i, dimension in enumerate(dimensions) if dimension == RESET_DIMENSION),
+        None,
+    )
     return {
         "filters": {
             str(index): dimension
             for index, dimension in enumerate(dimensions)
-            if dimension
-        }
+            if dimension and dimension != RESET_DIMENSION
+        },
+        "reset": reset,
     }
 
 
@@ -565,11 +588,8 @@ def group_scatter(
     segment_colours = _colour_map(segments) if has_industry else {}
     colour_by_segment = cfg.colour_by == "industry_segment" and has_industry
 
-    # De rækker der deles med item-plottet: emne-type, produktion og KAM.
-    shared_rows = [
-        (column, heading, dimension, _dimension_values(data, column))
-        for column, heading, dimension in SHARED_FILTER_ROWS
-    ]
+    has_kam = KAM in data.columns and data[KAM].notna().any()
+    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
 
     # Samme rækkefølge som item-plottet: kategori-blok først, derefter de
     # største kunder øverst inden for blokken.
@@ -587,8 +607,8 @@ def group_scatter(
     category_order: list[str] = []
     trace_categories: list[str] = []
     trace_types: list[object] = []
+    trace_kams: list[object] = []
     trace_segments: list[object] = []
-    shared_values: dict[str, list[object]] = {}
 
     for row in ordered.to_dict("records"):
         name = row[GROUP]
@@ -600,14 +620,13 @@ def group_scatter(
         customer_type = row.get("Kundetype")
         segment = row.get(INDUSTRY_SEGMENT)
         segment = segment if pd.notna(segment) else None
-        kam = row.get(KAM)
+        kam = row.get(KAM) if has_kam else None
         kam = kam if kam is not None and pd.notna(kam) else None
 
         trace_categories.append(category)
         trace_types.append(customer_type)
         trace_segments.append(segment)
-        for column, _, _, _ in shared_rows:
-            shared_values.setdefault(column, []).append(row.get(column))
+        trace_kams.append(kam)
 
         if colour_by_segment:
             colour = segment_colours.get(segment, "#7f7f7f")
@@ -647,10 +666,7 @@ def group_scatter(
                 meta={
                     "kundetype": customer_type,
                     "kategori": category,
-                    **{
-                        dimension: row.get(column)
-                        for column, _, dimension, _ in shared_rows
-                    },
+                    "kam": kam,
                 },
                 marker=dict(
                     size=10,
@@ -665,12 +681,13 @@ def group_scatter(
 
     types_present = [t for t in CUSTOMER_TYPE_ORDER if t in trace_types]
     button_groups: list[tuple[str, str | None, list[dict]]] = [
+        ("", RESET_DIMENSION, [reset_button()]),
         ("Vis/skjul kundetype:", "kundetype", toggle_buttons(types_present, trace_types)),
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
-    for column, heading, dimension, values in shared_rows:
+    if has_kam and kam_values:
         button_groups.append(
-            (heading, dimension, toggle_buttons(values, shared_values.get(column, [])))
+            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
         )
     if has_industry and segments and not colour_by_segment:
         button_groups.append(
@@ -801,15 +818,13 @@ def item_scatter(
     )
     group_colours = _colour_map(sorted(data[GROUP].dropna().unique().tolist()))
 
-    shared_rows = [
-        (column, heading, dimension, _dimension_values(data, column))
-        for column, heading, dimension in SHARED_FILTER_ROWS
-    ]
+    has_kam = KAM in data.columns and data[KAM].notna().any()
+    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
 
     fig = go.Figure()
     category_order: list[str] = []
     trace_categories: list[str] = []
-    shared_values: dict[str, list[object]] = {}
+    trace_kams: list[object] = []
 
     for name in customer_groups:
         block = data[data[GROUP] == name]
@@ -820,14 +835,10 @@ def item_scatter(
         if category not in category_order:
             category_order.append(category)
         trace_categories.append(category)
-        # Alle en enheds varer deler emne-type, produktionssted og KAM, så
-        # værdien kan tages fra den første række.
-        first = block.iloc[0]
-        for column, _, _, _ in shared_rows:
-            shared_values.setdefault(column, []).append(
-                first[column] if column in block.columns else None
-            )
-        kam = first[KAM] if KAM in block.columns and pd.notna(first[KAM]) else None
+        # KAM er slået op pr. kundegruppe, så alle en kundes varer hører til
+        # samme KAM og kan tændes og slukkes under ét.
+        kam = block[KAM].dropna().iloc[0] if has_kam and block[KAM].notna().any() else None
+        trace_kams.append(kam)
 
         fig.add_trace(
             go.Scatter(
@@ -840,13 +851,7 @@ def item_scatter(
                 text=block[ITEM_NO].astype(str),
                 textposition="top right",
                 textfont=dict(size=8),
-                meta={
-                    "kategori": category,
-                    **{
-                        dimension: (first[column] if column in block.columns else None)
-                        for column, _, dimension, _ in shared_rows
-                    },
-                },
+                meta={"kategori": category, "kam": kam},
                 marker=dict(
                     size=7,
                     color=group_colours[name],
@@ -879,11 +884,12 @@ def item_scatter(
     level_label = "Volumenkrav:"
     below_levels = -0.14 - BUTTON_ROW_GAP
     button_groups: list[tuple[str, str | None, list[dict]]] = [
-        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories))
+        ("", RESET_DIMENSION, [reset_button()]),
+        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
-    for column, heading, dimension, values in shared_rows:
+    if has_kam and kam_values:
         button_groups.append(
-            (heading, dimension, toggle_buttons(values, shared_values.get(column, [])))
+            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
         )
 
     menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(

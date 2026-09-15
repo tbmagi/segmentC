@@ -1,13 +1,11 @@
-"""Tests af de nye analyseenheder, dato-udledning og gemte standardværdier."""
+"""Tests af dato-udledning, output-mappen og gemte standardværdier."""
 
 import json
 import os
 from datetime import date
 
-import pandas as pd
 import pytest
 
-from segmentering.classify import ITEM_TYPE_LABELS
 from segmentering.config import (
     Config,
     OutputPaths,
@@ -18,16 +16,6 @@ from segmentering.config import (
     todays_fiscal_year,
     todays_reference_date,
 )
-from segmentering.dataio import (
-    CUSTOMER,
-    GEO,
-    GEO_CN,
-    GEO_DK,
-    GEO_OTHER,
-    ITEM_TYPE,
-    geo_of_rows,
-)
-from segmentering.pipeline import _qualified_names
 
 
 # --- Dagens dato -------------------------------------------------------------
@@ -39,14 +27,14 @@ def test_reference_date_follows_today():
 
 
 def test_fiscal_year_is_this_year_and_the_next():
-    assert todays_fiscal_year(date(2026, 9, 15)) == "2026/27"
-    assert todays_fiscal_year(date(2029, 2, 1)) == "2029/30"
+    assert todays_fiscal_year(date(2026, 9, 15)) == "2026/2027"
+    assert todays_fiscal_year(date(2029, 2, 1)) == "2029/2030"
 
 
-def test_the_fiscal_year_format_matches_the_data():
-    """Kolonnen 'Fiscal year' bruger ÅÅÅÅ/ÅÅ — ikke ÅÅÅÅ/ÅÅÅÅ."""
-    assert todays_fiscal_year(date(2026, 1, 1)).count("/") == 1
-    assert len(todays_fiscal_year(date(2026, 1, 1)).split("/")[1]) == 2
+def test_the_fiscal_year_is_written_with_four_digits_on_both_sides():
+    """Skal matche kolonnen 'Fiscal year' — ellers findes ingen nye kunder."""
+    start, end = todays_fiscal_year(date(2026, 1, 1)).split("/")
+    assert len(start) == 4 and len(end) == 4
 
 
 def test_a_fresh_config_is_dated_today():
@@ -71,118 +59,6 @@ def test_an_empty_output_field_uses_the_dated_folder():
 def test_an_explicit_folder_still_wins():
     paths = OutputPaths.create("rapport", "/et/andet/sted", write_excel=True)
     assert paths.directory == "/et/andet/sted"
-
-
-# --- Produktionssted ---------------------------------------------------------
-
-
-def frame_with_types(values):
-    return pd.DataFrame({"Turnover type": values})
-
-
-def test_geo_is_read_from_the_turnover_type():
-    cfg = Config()
-    geo = geo_of_rows(
-        frame_with_types(["DK prod.", "CN prod.", "SE prod."]),
-        cfg.cn_turnover_types,
-        cfg.dk_turnover_types,
-    )
-    assert list(geo) == [GEO_DK, GEO_CN, GEO_DK]
-
-
-def test_an_unknown_turnover_type_becomes_its_own_group():
-    """Intet må forsvinde i stilhed — ukendte typer får deres egen knap."""
-    cfg = Config()
-    geo = geo_of_rows(
-        frame_with_types(["Noget helt andet"]),
-        cfg.cn_turnover_types,
-        cfg.dk_turnover_types,
-    )
-    assert list(geo) == [GEO_OTHER]
-
-
-def test_no_turnover_type_column_means_no_geo_split():
-    cfg = Config()
-    assert (
-        geo_of_rows(pd.DataFrame({"andet": [1]}), cfg.cn_turnover_types, cfg.dk_turnover_types)
-        is None
-    )
-
-
-# --- Analyseenhedens navn ----------------------------------------------------
-
-
-def unit_frame(rows):
-    """rows: (kunde, item-type, geo)."""
-    return pd.DataFrame(
-        [{CUSTOMER: c, ITEM_TYPE: t, GEO: g} for c, t, g in rows]
-    )
-
-
-def test_a_customer_with_one_combination_keeps_its_plain_name():
-    frame = unit_frame([("GRUNDFOSS", "sintere", GEO_DK)])
-    assert list(_qualified_names(frame, has_geo=True)) == ["GRUNDFOSS"]
-
-
-def test_sinter_and_cast_become_separate_units():
-    frame = unit_frame(
-        [("GRUNDFOSS", "sintere", GEO_DK), ("GRUNDFOSS", "støbe", GEO_DK)]
-    )
-    assert list(_qualified_names(frame, has_geo=True)) == [
-        "GRUNDFOSS (Sinter)",
-        "GRUNDFOSS (Støb)",
-    ]
-
-
-def test_two_countries_become_separate_units():
-    frame = unit_frame(
-        [("GRUNDFOSS", "sintere", GEO_DK), ("GRUNDFOSS", "sintere", GEO_CN)]
-    )
-    assert list(_qualified_names(frame, has_geo=True)) == [
-        "GRUNDFOSS (DK)",
-        "GRUNDFOSS (CN)",
-    ]
-
-
-def test_both_dimensions_are_named_when_both_vary():
-    frame = unit_frame(
-        [
-            ("GRUNDFOSS", "sintere", GEO_DK),
-            ("GRUNDFOSS", "støbe", GEO_CN),
-        ]
-    )
-    assert list(_qualified_names(frame, has_geo=True)) == [
-        "GRUNDFOSS (Sinter, DK)",
-        "GRUNDFOSS (Støb, CN)",
-    ]
-
-
-def test_customers_are_qualified_independently():
-    """Én kundes opdeling må ikke give en anden kunde et unødigt kendetegn."""
-    frame = unit_frame(
-        [
-            ("GRUNDFOSS", "sintere", GEO_DK),
-            ("GRUNDFOSS", "støbe", GEO_DK),
-            ("DANFOSS", "sintere", GEO_DK),
-        ]
-    )
-    names = list(_qualified_names(frame, has_geo=True))
-    assert names == ["GRUNDFOSS (Sinter)", "GRUNDFOSS (Støb)", "DANFOSS"]
-
-
-def test_geo_is_left_out_when_the_column_is_missing():
-    frame = unit_frame(
-        [("GRUNDFOSS", "sintere", GEO_DK), ("GRUNDFOSS", "støbe", GEO_CN)]
-    )
-    assert list(_qualified_names(frame, has_geo=False)) == [
-        "GRUNDFOSS (Sinter)",
-        "GRUNDFOSS (Støb)",
-    ]
-
-
-def test_item_type_labels_are_the_ones_shown_on_the_buttons():
-    assert ITEM_TYPE_LABELS["sintere"] == "Sinter"
-    assert ITEM_TYPE_LABELS["støbe"] == "Støb"
 
 
 # --- Gemte standardværdier ---------------------------------------------------

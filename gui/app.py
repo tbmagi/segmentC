@@ -14,7 +14,7 @@ import queue
 import threading
 import tkinter as tk
 import traceback
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from segmentering import Config
 from segmentering.config import (
@@ -53,6 +53,9 @@ ZONE_COLOURS = {
 }
 
 BAND_FORMAT_HINT = "Format: min,max,gm%  (maks tom = ingen øvre grænse)"
+
+#: Hele udskriften fra en kørsel lægges her, ved siden af resultatet.
+LOG_FILENAME = "analyse-log.txt"
 
 
 def format_band(band: Band) -> str:
@@ -99,7 +102,7 @@ def describe_failure(exc: BaseException) -> str:
             return message
     return (
         f"Der opstod en uventet fejl: {type(exc).__name__}.\n\n"
-        "Hele fejlbeskeden står i loggen nederst i vinduet."
+        "Hele fejlbeskeden står i logfilen ved siden af resultatet."
     )
 
 
@@ -118,6 +121,8 @@ class SegmenteringApp(tk.Tk):
         # Beskeder fra beregningstråden til hovedtråden.
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._settings_window: tk.Toplevel | None = None
+        self._log_lines: list[str] = []
+        self._last_output_dir: str = ""
 
         self._configure_style()
         self._create_variables()
@@ -153,6 +158,8 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std = tk.IntVar()
         self.var_outlier_metric = tk.StringVar()
 
+        self.var_split_item_type = tk.BooleanVar()
+        self.var_geo_split = tk.BooleanVar()
         self.var_cn_types = tk.StringVar()
         self.var_dk_types = tk.StringVar()
 
@@ -197,7 +204,6 @@ class SegmenteringApp(tk.Tk):
         self._build_essentials(page)
         self._build_settings_bar(page)
         self._build_run_section(page)
-        self._build_log_section(page)
 
     # -- Forsiden -------------------------------------------------------------
 
@@ -315,6 +321,7 @@ class SegmenteringApp(tk.Tk):
         self._build_output_location_section(page)
         self._build_dates_section(page)
         self._build_filter_section(page)
+        self._build_split_section(page)
         self._build_calculation_section(page)
         self._build_axes_section(page)
         self._build_output_section(page)
@@ -499,6 +506,69 @@ class SegmenteringApp(tk.Tk):
         ).grid(row=1, column=2, sticky="w", padx=(0, 4))
 
         frame.columnconfigure(1, weight=1)
+
+    def _build_split_section(self, parent: tk.Widget) -> None:
+        frame = section(parent, "Opdeling af plots")
+        frame.pack(fill="x", padx=10, pady=5)
+
+        ttk.Checkbutton(
+            frame, text="Opdel plots i sinter og støb", variable=self.var_split_item_type
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=3)
+        help_icon(
+            frame,
+            "Når den er slået til, genereres to sæt plots: ét for sinter-emner "
+            "og ét for støbe-emner.\n\n"
+            "Item no. klassificeres automatisk:\n"
+            "  • 60-67 + mindst 6 cifre  →  Støbe\n"
+            "  • 70-77 + mindst 6 cifre  →  Sinter\n"
+            "  • alt andet               →  frasorteres\n\n"
+            "Manuel overrulning via suffix på item no.:\n"
+            "  • -S1  →  Sinter\n"
+            "  • -S2  →  Støbe\n"
+            "  • -S0  →  fjern fra segmenteringen",
+        ).grid(row=0, column=3, sticky="w", padx=(4, 0))
+
+        ttk.Checkbutton(
+            frame, text="Opdel plots i DK og CN", variable=self.var_geo_split
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=3)
+        help_icon(
+            frame,
+            "Når den er slået til, genereres separate plots for DK og CN i "
+            "tillæg til det samlede plot — for både sinter og støb.\n\n"
+            "Kræver kolonnen 'Turnover type' i data. Hvilke turnover-typer der "
+            "hører til CN henholdsvis DK sættes nedenfor.",
+        ).grid(row=1, column=3, sticky="w", padx=(4, 0))
+
+        geo_panel = ttk.Frame(frame)
+        ttk.Label(geo_panel, text="CN turnover-typer (komma):").grid(
+            row=0, column=0, sticky="w", pady=2
+        )
+        ttk.Entry(geo_panel, textvariable=self.var_cn_types, width=45).grid(
+            row=0, column=1, sticky="ew", padx=5, pady=2
+        )
+        ttk.Label(geo_panel, text="DK turnover-typer (komma):").grid(
+            row=1, column=0, sticky="w", pady=2
+        )
+        ttk.Entry(geo_panel, textvariable=self.var_dk_types, width=45).grid(
+            row=1, column=1, sticky="ew", padx=5, pady=2
+        )
+        help_icon(
+            geo_panel,
+            "Definerer hvilke værdier i kolonnen 'Turnover type' der regnes som "
+            "CN- henholdsvis DK-produktion. Adskil med komma.",
+        ).grid(row=0, column=2, rowspan=2, sticky="w", padx=(4, 0))
+        geo_panel.columnconfigure(1, weight=1)
+
+        self.geo_disclosure = Disclosure(
+            frame,
+            "Turnover-typer pr. geografi",
+            geo_panel,
+            dict(row=3, column=0, columnspan=4, sticky="ew", padx=5, pady=(4, 0)),
+        )
+        self.geo_disclosure.button.grid(
+            row=2, column=0, columnspan=3, sticky="w", pady=(8, 0)
+        )
+        frame.columnconfigure(2, weight=1)
 
     def _build_calculation_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "5  Beregning")
@@ -722,25 +792,36 @@ class SegmenteringApp(tk.Tk):
         ).grid(row=0, column=2, sticky="w", padx=(4, 4), pady=3)
 
     def _build_run_section(self, parent: tk.Widget) -> None:
-        frame = ttk.Frame(parent, padding=(10, 8))
+        frame = ttk.Frame(parent, padding=(10, 12))
         frame.pack(fill="x")
+
         self.run_button = ttk.Button(
             frame, text="▶  Kør analyse", style="Run.TButton", command=self.run
         )
-        self.run_button.pack(side="left", padx=(0, 10))
-        self.status_label = ttk.Label(frame, text="")
-        self.status_label.pack(side="left")
+        self.run_button.grid(row=0, column=0, sticky="w")
 
-    def _build_log_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "Log")
-        frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.log_view = scrolledtext.ScrolledText(
-            frame, height=12, state="disabled", font=("Courier", 9), wrap="word"
-        )
-        self.log_view.pack(fill="both", expand=True)
-        ttk.Button(frame, text="Ryd log", command=self.clear_log).pack(
-            anchor="e", pady=(4, 0)
-        )
+        self.status_label = ttk.Label(frame, text="", font=("Helvetica", 10))
+        self.status_label.grid(row=0, column=1, sticky="w", padx=14)
+
+        # Bjælken kører kun mens analysen er i gang. Den viser ikke hvor langt
+        # man er — det kan ikke vides på forhånd — men at der stadig sker noget.
+        self.progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
+        self.progress.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        self.progress.grid_remove()
+
+        self.step_label = ttk.Label(frame, text="", foreground=HINT_COLOUR)
+        self.step_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+        frame.columnconfigure(2, weight=1)
+
+    def _start_progress(self) -> None:
+        self.progress.grid()
+        self.progress.start(12)
+
+    def _stop_progress(self) -> None:
+        self.progress.stop()
+        self.progress.grid_remove()
+        self.step_label.configure(text="")
 
     # -- Konfiguration ind og ud ---------------------------------------------
 
@@ -809,6 +890,8 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std.set(int(cfg.outlier_std_threshold))
         self.var_outlier_metric.set(cfg.outlier_metric)
 
+        self.var_split_item_type.set(cfg.split_by_item_type)
+        self.var_geo_split.set(cfg.geo_cn or cfg.geo_dk)
         self.var_cn_types.set(", ".join(cfg.cn_turnover_types))
         self.var_dk_types.set(", ".join(cfg.dk_turnover_types))
 
@@ -840,6 +923,7 @@ class SegmenteringApp(tk.Tk):
     def _build_config(self) -> Config:
         """Læser skærmen til et ``Config``. Rejser ValueError ved ugyldige felter."""
         defaults = Config()
+        geo_split = self.var_geo_split.get()
 
         bands = {
             level: parse_band(variable.get(), f"Kundekategori {level}")
@@ -866,6 +950,10 @@ class SegmenteringApp(tk.Tk):
             remove_outliers=self.var_remove_outliers.get(),
             outlier_std_threshold=float(self.var_outlier_std.get()),
             outlier_metric=self.var_outlier_metric.get(),
+            split_by_item_type=self.var_split_item_type.get(),
+            geo_combined=True,
+            geo_cn=geo_split,
+            geo_dk=geo_split,
             cn_turnover_types=split_list(self.var_cn_types.get())
             or defaults.cn_turnover_types,
             dk_turnover_types=split_list(self.var_dk_types.get())
@@ -979,8 +1067,10 @@ class SegmenteringApp(tk.Tk):
             return
 
         self.run_button.configure(state="disabled")
-        self.status_label.configure(text="⏳ Analyserer…")
-        self.log("=" * 50)
+        self.status_label.configure(text="⏳  Analysen kører…")
+        self._log_lines = []
+        self._last_output_dir = cfg.paths.directory
+        self._start_progress()
         self.log(f"Starter analyse: {cfg.input_path}")
 
         threading.Thread(target=self._worker, args=(cfg,), daemon=True).start()
@@ -1029,12 +1119,20 @@ class SegmenteringApp(tk.Tk):
 
     def _finish(self, error: str | None) -> None:
         self.run_button.configure(state="normal")
+        self._stop_progress()
+        log_file = self._write_log_file(self._last_output_dir)
+
         if error is None:
-            self.status_label.configure(text="✅ Analyse færdig")
-            self._append_log("Analyse afsluttet uden fejl.")
-        else:
-            self.status_label.configure(text="❌ Analysen fejlede")
-            messagebox.showerror("Analysen kunne ikke gennemføres", error)
+            self.status_label.configure(text="✅  Analysen er færdig")
+            self.step_label.configure(
+                text=f"Resultatet ligger i: {self._last_output_dir}"
+            )
+            return
+
+        self.status_label.configure(text="❌  Analysen fejlede")
+        if log_file:
+            error = f"{error}\n\nHele udskriften står i:\n{log_file}"
+        messagebox.showerror("Analysen kunne ikke gennemføres", error)
 
     # -- Log ------------------------------------------------------------------
 
@@ -1042,21 +1140,31 @@ class SegmenteringApp(tk.Tk):
         """
         Modtager en linje fra beregningen. Må kaldes fra enhver tråd.
 
-        Beskeden lægges i kø frem for at blive skrevet direkte, fordi Tk kun
-        må betjenes fra hovedtråden.
+        Linjerne vises ikke længere i vinduet, men samles op og skrives til en
+        logfil ved siden af resultatet — så der stadig er noget at kigge i hvis
+        noget går galt. Køen bruges fordi Tk kun må betjenes fra hovedtråden.
         """
+        self._log_lines.append(str(message))
         self._events.put(("log", message))
 
     def _append_log(self, message: str) -> None:
-        self.log_view.configure(state="normal")
-        self.log_view.insert("end", f"{message}\n")
-        self.log_view.see("end")
-        self.log_view.configure(state="disabled")
+        """Viser den seneste linje som fremdrift, uden at fylde vinduet."""
+        line = str(message).strip().splitlines()
+        if line and line[0]:
+            self.step_label.configure(text=line[0][:110])
 
-    def clear_log(self) -> None:
-        self.log_view.configure(state="normal")
-        self.log_view.delete("1.0", "end")
-        self.log_view.configure(state="disabled")
+    def _write_log_file(self, directory: str) -> str | None:
+        """Lægger hele udskriften i en fil ved siden af resultatet."""
+        if not self._log_lines:
+            return None
+        target = os.path.join(directory, LOG_FILENAME)
+        try:
+            os.makedirs(directory, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(self._log_lines))
+        except OSError:
+            return None
+        return target
 
 
 def main() -> None:
