@@ -1,8 +1,10 @@
 pandas>=2.0
 numpy>=1.24
 openpyxl>=3.1
+xlrd>=2.0
 python-dateutil>=2.8
 plotly>=5.0
 
 # Kun til udvikling
 # pytest>=7.0
+# pyinstaller>=6.0     (installeres automatisk af build_exe.py)

@@ -1040,9 +1040,16 @@ def _group_categories(
 
 # --- Skrivning ---------------------------------------------------------------
 
+#: Plotly-biblioteket lægges ind i hver HTML-fil i stedet for at blive hentet
+#: fra internettet. Filen bliver ~4 MB større, men til gengæld er den komplet:
+#: den virker uden netværk, bag en firewall der blokerer cdn.plot.ly, og efter
+#: at være sendt videre til en kollega som en enkelt vedhæftet fil. Hentes
+#: biblioteket udefra, ser en tom side nøjagtig ud som en tom analyse.
+INCLUDE_PLOTLYJS = True
+
 
 def write_html(fig: "go.Figure", path: str, label: str, log: Log = print) -> None:
     pio.write_html(
-        fig, path, include_plotlyjs="cdn", post_script=filter_script(fig)
+        fig, path, include_plotlyjs=INCLUDE_PLOTLYJS, post_script=filter_script(fig)
     )
     log(f"[{label}] gemt til: {path}")

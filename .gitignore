@@ -8,3 +8,8 @@ venv/
 *.xlsx
 *.html
 !requirements.txt
+
+# Byggede programfiler
+build/
+dist/
+*.spec

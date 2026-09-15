@@ -21,6 +21,36 @@ python run_gui.py
 Tkinter følger med de fleste Python-installationer. På Debian/Ubuntu skal det
 installeres separat: `sudo apt install python3-tk`.
 
+## Et program der kan dobbeltklikkes
+
+Skal programmet bruges på en maskine uden Python, pakkes det til én fil:
+
+```bash
+python build_exe.py          # eller: dobbeltklik byg_exe.bat på Windows
+```
+
+Scriptet installerer selv det der mangler, henter PyInstaller og lægger
+resultatet i `dist/`. På Windows hedder det `Kundesegmentering.exe`. Filen
+indeholder Python, pandas og plotly, så den kan kopieres til en anden maskine
+og startes ved at dobbeltklikke — der skal ikke installeres noget.
+
+Byggemaskinen skal være samme slags som brugsmaskinen: PyInstaller kan ikke
+lave en Windows-exe fra en Mac eller omvendt. Der skal være Python 3.10 eller
+nyere med Tkinter på den maskine der bygger.
+
+| Tilvalg | Gør |
+| --- | --- |
+| `--mappe` | en mappe i stedet for én fil — starter hurtigere, men hele mappen skal følge med |
+| `--spring-over` | installer ikke afhængigheder først |
+| `--behold` | ryd ikke op efter byggeriet (til fejlsøgning) |
+
+Første start på en enkelt fil tager typisk 5–15 sekunder: filen pakker sig
+selv ud i en midlertidig mappe. Derefter går det hurtigt.
+
+Programmet skriver sin dato-mappe ved siden af sig selv, så læg det et sted
+hvor der må skrives — skrivebordet eller et fællesdrev, ikke
+`C:\Program Files`.
+
 ## Uden brugerflade
 
 Beregningen kan køres direkte fra et script eller en notebook:
@@ -131,6 +161,11 @@ fanerne for et udsnit viser derfor altid de samme tal.
 <basis>.xlsx
 ```
 
+Plotly-biblioteket lægges ind i hver HTML-fil. Det gør filen ca. 4 MB større,
+men den virker til gengæld uden internet, bag en firewall der blokerer
+`cdn.plot.ly`, og når den sendes videre som en enkelt vedhæftet fil. Hentes
+biblioteket udefra, ser en tom side nøjagtig ud som en tom analyse.
+
 ## Hvor resultatet havner
 
 Står output-mappen tom, oprettes en dateret mappe ved siden af programmet:
@@ -170,6 +205,10 @@ gui/                   Tkinter-brugerfladen
   help_window.py       "Sådan behandles data"
 
 run_gui.py             start brugerfladen
+build_exe.py           pak programmet til én fil der kan dobbeltklikkes
+byg_exe.bat            samme, til dobbeltklik på Windows
+kundesegmentering.ico  ikon på den byggede programfil
+docs/                  Word-introduktionen og scriptet der bygger den
 tests/                 pytest-tests af beregningslogikken
 ```
 
@@ -177,9 +216,24 @@ Konfigurationen sendes som et `Config`-objekt hele vejen igennem. Ingen
 funktion læser eller ændrer globale indstillinger, så hvert trin kan afprøves
 for sig, og flere analyser kan køre i samme proces uden at påvirke hinanden.
 
+## Introduktion til nye brugere
+
+`docs/Kundesegmentering-introduktion.docx` beskriver værktøjet for en kollega
+der skal overtage det: hvad analysen gør, hvordan tallene bliver til, og
+hvordan graferne læses — uden kode. Den bygges om med:
+
+```bash
+npm install docx
+node docs/build_doc.js
+```
+
+Rettelser hører hjemme i `docs/build_doc.js`, så dokumentet kan bygges igen.
+
 ## Tests
 
 ```bash
 pip install pytest
 python -m pytest tests/ -q
 ```
+
+Tre af testene rører brugerfladen og springes over hvis Tkinter mangler.
