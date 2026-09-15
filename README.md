@@ -112,18 +112,46 @@ filterknap, beregnes synligheden forfra ud fra knapperne alene.
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.
 
-## Udsnit og filnavne
+## Analyseenheder
 
-Analysen kører ét **udsnit** ad gangen. Udsnittene udspændes af tre valg —
-emne-type, geografi og kundeudvalg — og hvert udsnit får sit eget sæt filer og
-Excel-faner, beregnet forfra på netop de rækker. Plottet og fanerne for et
-udsnit viser derfor altid de samme tal.
+Emne-type (sinter/støb) og produktionssted (DK/CN) laver ikke hver sit sæt
+filer. De er egenskaber ved den enkelte analyseenhed og tændes og slukkes
+direkte i grafen sammen med kundetype, kategori og KAM.
+
+En kunde med både sinter og støb bliver derfor til flere enheder med hver sin
+omsætning og margin. Kendetegn tilføjes kun når de er nødvendige for at
+skelne:
+
+| Kunden har | Enhedens navn |
+| --- | --- |
+| kun sinter, kun DK | `GRUNDFOSS` |
+| sinter og støb | `GRUNDFOSS (Sinter)`, `GRUNDFOSS (Støb)` |
+| sinter i både DK og CN | `GRUNDFOSS (DK)`, `GRUNDFOSS (CN)` |
+| begge dele | `GRUNDFOSS (Sinter, DK)` … |
+
+Varer der hverken er sinter eller støb samles under `Andet`, og
+turnover-typer der hverken er DK eller CN under `Øvrig` — så intet forsvinder
+uden at kunne ses.
+
+## Hvor resultatet havner
+
+Står output-mappen tom, oprettes en dateret mappe ved siden af programmet:
 
 ```
-<basis>_kundegruppe[_sinter|_stoebe][_cn|_dk][_eks].html
-<basis>_item[_sinter|_stoebe][_cn|_dk][_eks].html
-<basis>.xlsx
+Kundesegmentering 2026-09-15/
+  kunde_segmentering_kundegruppe.html
+  kunde_segmentering_item.html
+  kunde_segmentering.xlsx
 ```
+
+## Egne standardværdier
+
+Knappen **Gem som mine standardværdier** i indstillingsvinduet skriver
+`segmentering_indstillinger.json` ved siden af programmet. Den læses næste
+gang programmet åbnes, og følger med hvis mappen kopieres til en kollega.
+
+Dags dato og ny-regnskabsår gemmes ikke — de udfyldes altid ud fra dagens
+dato. Er det 15-09-2026, står der `09-2026` og `2026/27`.
 
 ## Projektets opbygning
 

@@ -26,7 +26,7 @@ from .config import (
     Band,
     Config,
 )
-from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
+from .dataio import GEO, GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
 from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM, sort_kams
 
 try:  # Plotly er en hård afhængighed for plots, men ikke for beregningerne.
@@ -97,6 +97,29 @@ def _qualitative_palette() -> list[str]:
         + plotly_colours.qualitative.D3
         + plotly_colours.qualitative.Light24
     )
+
+
+#: De rækker af filterknapper begge grafer deler. Hver post er
+#: (kolonne i data, overskrift, dimensionsnavn til scriptet).
+SHARED_FILTER_ROWS = [
+    ("_emnetype", "Vis/skjul emne-type:", "emnetype"),
+    (GEO, "Vis/skjul produktion:", "geografi"),
+    (KAM, "Vis/skjul KAM:", "kam"),
+]
+
+ITEM_TYPE_ORDER = ["Sinter", "Støb", "Andet"]
+
+
+def _dimension_values(data: pd.DataFrame, column: str) -> list[object]:
+    """Værdierne i en kolonne, i en fast og læsbar rækkefølge."""
+    if column not in data.columns:
+        return []
+    values = data[column].dropna().unique().tolist()
+    if column == KAM:
+        return sort_kams(values)
+    if column == "_emnetype":
+        return [v for v in ITEM_TYPE_ORDER if v in values]
+    return sorted(values, key=lambda v: (v == "Øvrig", str(v)))
 
 
 def _colour_map(values: Sequence[object]) -> dict[object, str]:
@@ -542,8 +565,11 @@ def group_scatter(
     segment_colours = _colour_map(segments) if has_industry else {}
     colour_by_segment = cfg.colour_by == "industry_segment" and has_industry
 
-    has_kam = KAM in data.columns and data[KAM].notna().any()
-    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
+    # De rækker der deles med item-plottet: emne-type, produktion og KAM.
+    shared_rows = [
+        (column, heading, dimension, _dimension_values(data, column))
+        for column, heading, dimension in SHARED_FILTER_ROWS
+    ]
 
     # Samme rækkefølge som item-plottet: kategori-blok først, derefter de
     # største kunder øverst inden for blokken.
@@ -561,8 +587,8 @@ def group_scatter(
     category_order: list[str] = []
     trace_categories: list[str] = []
     trace_types: list[object] = []
-    trace_kams: list[object] = []
     trace_segments: list[object] = []
+    shared_values: dict[str, list[object]] = {}
 
     for row in ordered.to_dict("records"):
         name = row[GROUP]
@@ -574,13 +600,14 @@ def group_scatter(
         customer_type = row.get("Kundetype")
         segment = row.get(INDUSTRY_SEGMENT)
         segment = segment if pd.notna(segment) else None
-        kam = row.get(KAM) if has_kam else None
+        kam = row.get(KAM)
         kam = kam if kam is not None and pd.notna(kam) else None
 
         trace_categories.append(category)
         trace_types.append(customer_type)
         trace_segments.append(segment)
-        trace_kams.append(kam)
+        for column, _, _, _ in shared_rows:
+            shared_values.setdefault(column, []).append(row.get(column))
 
         if colour_by_segment:
             colour = segment_colours.get(segment, "#7f7f7f")
@@ -620,7 +647,10 @@ def group_scatter(
                 meta={
                     "kundetype": customer_type,
                     "kategori": category,
-                    "kam": kam,
+                    **{
+                        dimension: row.get(column)
+                        for column, _, dimension, _ in shared_rows
+                    },
                 },
                 marker=dict(
                     size=10,
@@ -638,9 +668,9 @@ def group_scatter(
         ("Vis/skjul kundetype:", "kundetype", toggle_buttons(types_present, trace_types)),
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
-    if has_kam and kam_values:
+    for column, heading, dimension, values in shared_rows:
         button_groups.append(
-            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+            (heading, dimension, toggle_buttons(values, shared_values.get(column, [])))
         )
     if has_industry and segments and not colour_by_segment:
         button_groups.append(
@@ -771,13 +801,15 @@ def item_scatter(
     )
     group_colours = _colour_map(sorted(data[GROUP].dropna().unique().tolist()))
 
-    has_kam = KAM in data.columns and data[KAM].notna().any()
-    kam_values = sort_kams(data[KAM].dropna().unique().tolist()) if has_kam else []
+    shared_rows = [
+        (column, heading, dimension, _dimension_values(data, column))
+        for column, heading, dimension in SHARED_FILTER_ROWS
+    ]
 
     fig = go.Figure()
     category_order: list[str] = []
     trace_categories: list[str] = []
-    trace_kams: list[object] = []
+    shared_values: dict[str, list[object]] = {}
 
     for name in customer_groups:
         block = data[data[GROUP] == name]
@@ -788,10 +820,14 @@ def item_scatter(
         if category not in category_order:
             category_order.append(category)
         trace_categories.append(category)
-        # KAM er slået op pr. kundegruppe, så alle en kundes varer hører til
-        # samme KAM og kan tændes og slukkes under ét.
-        kam = block[KAM].dropna().iloc[0] if has_kam and block[KAM].notna().any() else None
-        trace_kams.append(kam)
+        # Alle en enheds varer deler emne-type, produktionssted og KAM, så
+        # værdien kan tages fra den første række.
+        first = block.iloc[0]
+        for column, _, _, _ in shared_rows:
+            shared_values.setdefault(column, []).append(
+                first[column] if column in block.columns else None
+            )
+        kam = first[KAM] if KAM in block.columns and pd.notna(first[KAM]) else None
 
         fig.add_trace(
             go.Scatter(
@@ -804,7 +840,13 @@ def item_scatter(
                 text=block[ITEM_NO].astype(str),
                 textposition="top right",
                 textfont=dict(size=8),
-                meta={"kategori": category, "kam": kam},
+                meta={
+                    "kategori": category,
+                    **{
+                        dimension: (first[column] if column in block.columns else None)
+                        for column, _, dimension, _ in shared_rows
+                    },
+                },
                 marker=dict(
                     size=7,
                     color=group_colours[name],
@@ -839,9 +881,9 @@ def item_scatter(
     button_groups: list[tuple[str, str | None, list[dict]]] = [
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories))
     ]
-    if has_kam and kam_values:
+    for column, heading, dimension, values in shared_rows:
         button_groups.append(
-            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+            (heading, dimension, toggle_buttons(values, shared_values.get(column, [])))
         )
 
     menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(

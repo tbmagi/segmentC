@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field, replace
+import json
+from dataclasses import asdict, dataclass, field, fields, replace
+from datetime import date
 from typing import Iterable, Literal, Mapping, Sequence
 
 # --- Værdi-domæner for de valgfrie indstillinger -----------------------------
@@ -31,6 +33,51 @@ ExcelDetail = Literal["minimal", "kompakt", "fuld"]
 ColourBy = Literal["kundetype", "industry_segment"]
 
 TDKK = 1_000  # tabel-referencerne nedenfor er i tusinde DKK
+
+#: Mappen med resultatet oprettes ved siden af programmet og navngives med
+#: dagens dato, så hver kørsel kan findes igen.
+OUTPUT_FOLDER_PREFIX = "Kundesegmentering"
+
+#: Filen med brugerens egne standardværdier, gemt ved siden af programmet.
+SETTINGS_FILENAME = "segmentering_indstillinger.json"
+
+
+def program_directory() -> str:
+    """
+    Mappen programmet ligger i.
+
+    Pakkes programmet til en enkelt exe-fil, er det mappen med exe-filen —
+    ikke den midlertidige mappe Python pakkes ud i. Derfor bruges
+    ``sys.executable`` når ``sys.frozen`` er sat.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def todays_reference_date(today: date | None = None) -> str:
+    """Dags dato som MM-ÅÅÅÅ. Er det 15-09-2026, bliver det "09-2026"."""
+    today = today or date.today()
+    return f"{today.month:02d}-{today.year}"
+
+
+def todays_fiscal_year(today: date | None = None) -> str:
+    """
+    Regnskabsåret som ÅÅÅÅ/ÅÅ — indeværende år og året efter.
+
+    Er det 2026, bliver det "2026/27". Formatet svarer til det der står i
+    kolonnen 'Fiscal year' i salgsudtrækket.
+    """
+    today = today or date.today()
+    return f"{today.year}/{str(today.year + 1)[2:]}"
+
+
+def dated_output_directory(today: date | None = None) -> str:
+    """Stien til dagens resultatmappe ved siden af programmet."""
+    today = today or date.today()
+    return os.path.join(
+        program_directory(), f"{OUTPUT_FOLDER_PREFIX} {today:%Y-%m-%d}"
+    )
 
 
 # --- Turnover/GM-bånd --------------------------------------------------------
@@ -189,11 +236,9 @@ class OutputPaths:
 
         folder = (directory or "").strip() if isinstance(directory, str) else ""
         if not folder:
-            # Uden en eksplicit mappe gemmes filerne ved siden af programmet.
-            if getattr(sys, "frozen", False):
-                folder = os.path.dirname(sys.executable)
-            else:
-                folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # Uden en eksplicit mappe lægges resultatet i en dateret mappe
+            # ved siden af programmet, så hver kørsel kan findes igen.
+            folder = dated_output_directory()
 
         return cls(directory=folder, basename=base, write_excel=write_excel)
 
@@ -229,9 +274,9 @@ class Config:
     input_path: str = DEFAULT_INPUT_PATH
 
     # Datoer og kundetyper
-    reference_date: str = "05-2026"  # "MM-YYYY"
+    reference_date: str = field(default_factory=todays_reference_date)  # "MM-ÅÅÅÅ"
     existing_customer_months: int = 24
-    new_fiscal_year: str = "2026/27"  # tom streng = brug dato-baseret fallback
+    new_fiscal_year: str = field(default_factory=todays_fiscal_year)
 
     # Frasortering
     excluded_customer_groups: list[str] = field(default_factory=lambda: ["FJ"])
@@ -249,11 +294,7 @@ class Config:
     outlier_std_threshold: float = 2.0
     outlier_metric: OutlierMetric = "gm"
 
-    # Opdeling af plots
-    split_by_item_type: bool = True
-    geo_combined: bool = True
-    geo_cn: bool = False
-    geo_dk: bool = False
+    # Produktionssted — bruges til DK/CN-knapperne i graferne
     cn_turnover_types: list[str] = field(
         default_factory=lambda: list(DEFAULT_CN_TURNOVER_TYPES)
     )
@@ -299,10 +340,6 @@ class Config:
         return OutputPaths.create(
             self.output_basename, self.output_dir, self.write_excel
         )
-
-    @property
-    def uses_geo_split(self) -> bool:
-        return self.geo_cn or self.geo_dk
 
     def replace(self, **changes: object) -> "Config":
         """Returnerer en kopi med ændrede felter (konfigurationen er aldrig delt)."""
@@ -359,13 +396,106 @@ class Config:
                 "Farvelogik skal være 'kundetype' eller 'industry_segment', "
                 f"fik: {self.colour_by!r}"
             )
-        if not (self.geo_combined or self.geo_cn or self.geo_dk):
-            raise ValueError(
-                "Mindst én geografisk opdeling skal være valgt (Samlet, CN eller DK)."
-            )
         validate_bands(self.category_bands, "Kundekategori")
         for level, zones in self.volume_zones.items():
             validate_bands(zones, f"Volumenområde {level}", require_disjoint=False)
+
+
+# --- Brugerens egne standardværdier -----------------------------------------
+
+#: Felter der ALDRIG gemmes som standard, fordi de udledes af dagens dato.
+#: Gemte man dem, ville programmet stivne på den dag indstillingerne blev
+#: gemt, og ændring af dags dato ville miste sin pointe.
+DATE_DERIVED_FIELDS = ("reference_date", "new_fiscal_year")
+
+
+def settings_path() -> str:
+    """Stien til filen med brugerens egne standardværdier."""
+    return os.path.join(program_directory(), SETTINGS_FILENAME)
+
+
+def _band_to_list(band: Band) -> list:
+    return [band.turnover_min, band.turnover_max, band.gm_min]
+
+
+def config_to_dict(cfg: "Config") -> dict:
+    """Gør et Config klar til at blive gemt som JSON."""
+    data = asdict(cfg)
+    for field_name in DATE_DERIVED_FIELDS:
+        data.pop(field_name, None)
+    data["category_bands"] = {
+        name: _band_to_list(band) for name, band in cfg.category_bands.items()
+    }
+    data["volume_zones"] = {
+        level: {name: _band_to_list(band) for name, band in zones.items()}
+        for level, zones in cfg.volume_zones.items()
+    }
+    return data
+
+
+def save_defaults(cfg: "Config", path: str | None = None) -> str:
+    """
+    Gemmer indstillingerne som brugerens nye standardværdier.
+
+    Filen lægges ved siden af programmet, så den følger med hvis mappen
+    flyttes eller kopieres til en kollega.
+    """
+    target = path or settings_path()
+    try:
+        with open(target, "w", encoding="utf-8") as handle:
+            json.dump(config_to_dict(cfg), handle, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        raise ValueError(
+            f"Kunne ikke gemme standardindstillingerne:\n{target}\n\n"
+            f"Årsag: {exc.strerror or exc}\n"
+            "Programmet skal kunne skrive i sin egen mappe."
+        ) from exc
+    return target
+
+
+def load_defaults(path: str | None = None) -> "Config":
+    """
+    Læser brugerens gemte standardværdier.
+
+    Findes filen ikke, bruges fabriksindstillingerne. Er den ødelagt eller
+    indeholder den felter programmet ikke kender, gives der besked frem for
+    at starte med halvt indlæste indstillinger.
+    """
+    source = path or settings_path()
+    if not os.path.isfile(source):
+        return Config()
+    try:
+        with open(source, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Kunne ikke læse de gemte standardindstillinger:\n{source}\n\n"
+            f"Årsag: {exc}\n"
+            "Slet filen for at vende tilbage til fabriksindstillingerne."
+        ) from exc
+
+    known = {f.name for f in fields(Config)}
+    unknown = sorted(set(data) - known)
+    if unknown:
+        raise ValueError(
+            f"De gemte standardindstillinger indeholder ukendte felter: "
+            f"{', '.join(unknown)}\n\n"
+            f"Filen stammer sandsynligvis fra en anden version. Slet den for "
+            f"at vende tilbage til fabriksindstillingerne:\n{source}"
+        )
+    # Dato-felterne er bevidst ikke gemt og udledes af dagens dato.
+    for field_name in DATE_DERIVED_FIELDS:
+        data.pop(field_name, None)
+    return Config(**data)
+
+
+def clear_defaults(path: str | None = None) -> bool:
+    """Fjerner de gemte standardværdier. Returnerer True hvis der var nogen."""
+    target = path or settings_path()
+    if os.path.isfile(target):
+        os.remove(target)
+        return True
+    return False
 
 
 def validate_bands(

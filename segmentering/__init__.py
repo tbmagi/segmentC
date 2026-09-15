@@ -16,7 +16,17 @@ GUI'en i pakken ``gui`` bygger det samme ``Config``-objekt ud fra felterne på
 skærmen og kalder ``run_analysis`` med sin egen log-funktion.
 """
 
-from .config import Band, Config, OutputPaths
+from .config import (
+    Band,
+    Config,
+    OutputPaths,
+    clear_defaults,
+    load_defaults,
+    save_defaults,
+    settings_path,
+    todays_fiscal_year,
+    todays_reference_date,
+)
 from .dataio import ReferenceDates
 from .pipeline import Segment, SegmentResult, run_analysis
 
@@ -24,6 +34,12 @@ __all__ = [
     "Band",
     "Config",
     "OutputPaths",
+    "clear_defaults",
+    "load_defaults",
+    "save_defaults",
+    "settings_path",
+    "todays_fiscal_year",
+    "todays_reference_date",
     "ReferenceDates",
     "Segment",
     "SegmentResult",

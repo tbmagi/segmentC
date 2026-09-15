@@ -1,18 +1,18 @@
 """
 Orkestrering af hele analysen.
 
-Kørslen er bygget op om ét begreb: et **udsnit** (``Segment``). Et udsnit er
-en delmængde af rækkerne — fx "sinter-emner produceret i CN" — og hvert udsnit
-giver præcis ét kundegruppe-plot, ét item-plot og ét sæt Excel-faner.
+Emne-type (sinter/støb) og geografi (DK/CN) er ikke længere adskilte kørsler
+med hver sit sæt filer. De er nu egenskaber ved den enkelte analyseenhed, så
+de kan tændes og slukkes direkte i grafen sammen med kundetype, kategori og
+KAM.
 
-Udsnittene udspændes af tre uafhængige valg:
+Det betyder at en kunde med både sinter og støb bliver til FLERE enheder —
+"GRUNDFOSS (Sinter)" og "GRUNDFOSS (Støb)" — der hver især har deres egen
+omsætning og margin. Kendetegnene tilføjes kun når de er nødvendige for at
+skelne: har en kunde kun sinter, hedder den bare "GRUNDFOSS".
 
-* emne-type   – sinter / støbe, eller alt under ét
-* geografi    – samlet / CN / DK
-* kundeudvalg – alle kunder, og valgfrit en ekstra kørsel med kun eksisterende
-
-Fordi hvert udsnit filtreres én gang og derefter beregnes forfra, svarer
-plottet altid til de Excel-faner der hører til samme udsnit.
+Tilbage som egentligt udsnit er kun kundeudvalget: alle kunder, og valgfrit
+en ekstra kørsel med kun eksisterende.
 """
 
 from __future__ import annotations
@@ -23,19 +23,20 @@ from typing import Callable
 
 import pandas as pd
 
-from .classify import CAST, SINTER, classify_item_no, customer_types_by_group, has_manual_suffix
+from .classify import ITEM_TYPE_LABELS, classify_item_no, customer_types_by_group
 from .config import Config
 from .dataio import (
+    CUSTOMER,
     CUSTOMER_TYPE_GLOBAL,
+    GEO,
     GROUP,
-    HAS_MANUAL_SUFFIX,
     ITEM_NO,
     ITEM_TYPE,
     KAM,
     ReferenceDates,
     apply_row_filters,
+    geo_of_rows,
     load_sales_data,
-    turnover_type_mask,
 )
 from .excel_report import ExcelReport, parameter_sheet
 from .metrics import drop_dead_items, group_metrics, item_metrics, kam_by_group
@@ -74,131 +75,95 @@ class SegmentResult:
 # --- Forberedelse ------------------------------------------------------------
 
 
+def _qualified_names(df: pd.DataFrame, has_geo: bool) -> pd.Series:
+    """
+    Bygger analysens enhedsnavne.
+
+    En kunde med både sinter og støb skal kunne skilles ad i grafen, så den
+    bliver til "GRUNDFOSS (Sinter)" og "GRUNDFOSS (Støb)". Kendetegn tilføjes
+    kun for de dimensioner der faktisk varierer inden for kunden — har en
+    kunde kun sinter, hedder den bare "GRUNDFOSS".
+    """
+    names = df[CUSTOMER].astype(str)
+    type_labels = df[ITEM_TYPE].map(ITEM_TYPE_LABELS).fillna("")
+    varies_type = df.groupby(CUSTOMER)[ITEM_TYPE].transform("nunique") > 1
+    type_part = type_labels.where(varies_type, "")
+
+    if has_geo:
+        varies_geo = df.groupby(CUSTOMER)[GEO].transform("nunique") > 1
+        geo_part = df[GEO].astype(str).where(varies_geo, "")
+    else:
+        geo_part = pd.Series("", index=df.index)
+
+    both = (type_part != "") & (geo_part != "")
+    suffix = (type_part + geo_part).mask(both, type_part + ", " + geo_part)
+    decorated = (" (" + suffix + ")").where(suffix != "", "")
+    return names + decorated
+
+
 def annotate(df: pd.DataFrame, cfg: Config, dates: ReferenceDates, log: Log) -> pd.DataFrame:
     """
-    Tilføjer de kolonner udsnits-opdelingen har brug for.
+    Gør rækkerne klar til analyse.
 
-    ``CUSTOMER_TYPE_GLOBAL`` beregnes på det FULDE datasæt og styrer alene
-    hvilke items nye kunder må tage med sig gennem emne-type-filteret. Den
-    kundetype der vises i plot og rapport beregnes derimod pr. udsnit, fordi
-    en kunde kan se anderledes ud når man kun betragter fx dens sinter-emner.
+    Her afgøres hvad der udgør én analyseenhed. Emne-type og produktionssted
+    bestemmes pr. række, og kunder der spænder over flere af dem deles op i
+    hver sin enhed med et sigende navn.
+
+    KAM slås op på det RÅ kundenavn, så en kundes dele altid hører til samme
+    key account manager. Kundetypen beregnes derimod pr. enhed: en kundes
+    sinter-del kan sagtens være aktiv mens støbe-delen er stoppet.
     """
     annotated = df.copy()
+    annotated[CUSTOMER] = annotated[GROUP]
     annotated[ITEM_TYPE] = annotated[ITEM_NO].apply(classify_item_no)
-    annotated[HAS_MANUAL_SUFFIX] = has_manual_suffix(annotated[ITEM_NO])
+
+    geo = geo_of_rows(annotated, cfg.cn_turnover_types, cfg.dk_turnover_types)
+    has_geo = geo is not None
+    if has_geo:
+        annotated[GEO] = geo
+
+    # KAM hører til kunden som helhed, ikke til den enkelte del af den.
+    if KAM in annotated.columns:
+        annotated[KAM] = annotated[CUSTOMER].map(
+            kam_by_group(annotated, key=CUSTOMER)
+        )
+
+    annotated[GROUP] = _qualified_names(annotated, has_geo)
 
     customer_types = customer_types_by_group(annotated, dates, cfg.new_fiscal_year)
     annotated[CUSTOMER_TYPE_GLOBAL] = annotated[GROUP].map(customer_types)
 
-    # KAM opløses ÉN gang på hele datasættet og skrives tilbage i kolonnen.
-    # Gjorde hvert udsnit det selv, kunne den valgte stavemåde variere mellem
-    # sinter- og støbe-plottet, fordi den nyeste række ikke er den samme i de
-    # to udsnit. Nu står den samme person som det samme overalt.
-    if KAM in annotated.columns:
-        annotated[KAM] = annotated[GROUP].map(kam_by_group(annotated))
-
-    distribution = pd.Series(customer_types).value_counts().to_dict()
-    log(f"Kundetype-fordeling: {distribution}")
+    log(f"Emne-type fordeling: {annotated[ITEM_TYPE].map(ITEM_TYPE_LABELS).value_counts().to_dict()}")
+    if has_geo:
+        log(f"Geografi-fordeling: {annotated[GEO].value_counts().to_dict()}")
+    log(f"Kundetype-fordeling: {pd.Series(customer_types).value_counts().to_dict()}")
+    split = annotated[GROUP].nunique() - annotated[CUSTOMER].nunique()
+    if split > 0:
+        log(f"  {split} ekstra analyseenheder fordi kunder spænder over flere emne-typer eller lande")
     return annotated
 
 
-def _new_customer_wildcards(df: pd.DataFrame) -> pd.Series:
-    """
-    Rækker fra nye kunder uden manuelt suffix.
-
-    De medtages i BEGGE emne-type-udsnit, så en ny kunde altid kan ses på
-    begge plots. Et eksplicit -S0/-S1/-S2 suffix vinder dog altid, også for
-    nye kunder.
-    """
-    return (df[CUSTOMER_TYPE_GLOBAL] == "Ny") & ~df[HAS_MANUAL_SUFFIX]
-
-
-def _item_type_dimension(
-    df: pd.DataFrame, cfg: Config, log: Log
-) -> list[tuple[str, str, pd.DataFrame]]:
-    """Opdeler på emne-type og returnerer (label, filnavn-del, data)."""
-    wildcards = _new_customer_wildcards(df)
-
-    if not cfg.split_by_item_type:
-        combined = df[df[ITEM_TYPE].isin([SINTER, CAST]) | wildcards].copy()
-        return [("Alle emner", "", combined)]
-
-    log(f"\nItem-type fordeling: {df[ITEM_TYPE].value_counts().to_dict()}")
-    new_rows = int(wildcards.sum())
-    if new_rows:
-        groups = df.loc[wildcards, GROUP].nunique()
-        log(
-            f"Ny-kunder: {new_rows} rækker fra {groups} kundegrupper uden suffix "
-            "tilføjes til BEGGE emne-type-plots"
-        )
-
-    return [
-        ("Sinter", "sinter", df[(df[ITEM_TYPE] == SINTER) | wildcards].copy()),
-        ("Støbe", "stoebe", df[(df[ITEM_TYPE] == CAST) | wildcards].copy()),
-    ]
-
-
-def _geo_dimension(cfg: Config) -> list[tuple[str, str, list[str] | None]]:
-    """Returnerer (label, filnavn-del, tilladte turnover-typer) pr. geo-udsnit."""
-    variants: list[tuple[str, str, list[str] | None]] = []
-    if cfg.geo_combined:
-        variants.append(("", "", None))
-    if cfg.geo_cn:
-        variants.append(("CN", "cn", cfg.cn_turnover_types))
-    if cfg.geo_dk:
-        variants.append(("DK", "dk", cfg.dk_turnover_types))
-    return variants
-
-
 def build_segments(df: pd.DataFrame, cfg: Config, log: Log) -> list[Segment]:
-    """Udspænder alle udsnit af emne-type × geografi × kundeudvalg."""
-    segments: list[Segment] = []
-    customer_selections = [("", "", False)]
+    """
+    Udsnittene er nu kun kundeudvalget.
+
+    Emne-type og geografi håndteres som filtre i selve grafen, så de laver
+    ikke længere hver sit sæt filer.
+    """
+    # Varer der hverken er sinter eller støb beholdes som deres egen gruppe,
+    # så intet forsvinder uden at kunne ses. Kun -S0 fjerner en vare helt,
+    # og det er allerede sket i klassifikationen.
+    segments = [Segment(label="Alle kunder", sheet_prefix="", file_parts=(), frame=df)]
     if cfg.existing_customers_only:
-        customer_selections.append(("kun eksisterende", "eks", True))
-
-    for type_label, type_part, type_frame in _item_type_dimension(df, cfg, log):
-        for geo_label, geo_part, geo_types in _geo_dimension(cfg):
-            if geo_types is None:
-                frame = type_frame
-            else:
-                # Nye kunder uden suffix følger med i alle geo-udsnit, så de
-                # ikke forsvinder fordi deres turnover-type endnu er ukendt.
-                mask = turnover_type_mask(type_frame, geo_types) | _new_customer_wildcards(
-                    type_frame
-                )
-                frame = type_frame[mask].copy()
-
-            for selection_label, selection_part, existing_only in customer_selections:
-                if existing_only:
-                    frame_for_run = frame[
-                        frame[CUSTOMER_TYPE_GLOBAL] == "Eksisterende"
-                    ].copy()
-                else:
-                    frame_for_run = frame
-
-                label = " – ".join(
-                    part for part in (type_label, geo_label, selection_label) if part
-                )
-                prefix = "_".join(
-                    part
-                    for part in (
-                        type_label.replace(" ", "_") if type_label != "Alle emner" else "",
-                        geo_label,
-                        selection_part,
-                    )
-                    if part
-                )
-                segments.append(
-                    Segment(
-                        label=label or "Alle emner",
-                        sheet_prefix=prefix,
-                        file_parts=tuple(
-                            part for part in (type_part, geo_part, selection_part) if part
-                        ),
-                        frame=frame_for_run,
-                    )
-                )
+        existing = df[df[CUSTOMER_TYPE_GLOBAL] == "Eksisterende"].copy()
+        segments.append(
+            Segment(
+                label="Kun eksisterende",
+                sheet_prefix="eks",
+                file_parts=("eks",),
+                frame=existing,
+            )
+        )
     return segments
 
 

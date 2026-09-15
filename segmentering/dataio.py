@@ -58,7 +58,15 @@ OPTIONAL_COLUMNS = [TURNOVER_TYPE, FISCAL_YEAR, INDUSTRY_SEGMENT, KAM]
 HEADER_SCAN_ROWS = 200
 
 # Kolonner pakken selv tilføjer undervejs.
+#: Analysens enhed. Har en kunde både sinter og støb, bliver det til flere
+#: enheder — "GRUNDFOSS (Sinter)" og "GRUNDFOSS (Støb)" — så de kan tændes
+#: og slukkes hver for sig i graferne.
 GROUP = "KundeGruppe"
+#: Kundens rå navn, uden de tilføjede kendetegn. Bevares så man kan lægge
+#: sammen på tværs af opdelingen i Excel.
+CUSTOMER = "Kunde"
+#: Hvor varen er produceret, udledt af 'Turnover type'.
+GEO = "Geografi"
 PERIOD = "year-mo-parsed"
 ITEM_TYPE = "ItemType"
 CUSTOMER_TYPE_GLOBAL = "_customer_type_global"
@@ -348,6 +356,31 @@ def apply_row_filters(
 
     log(f"Antal unikke kundegrupper: {df[GROUP].nunique()}")
     return df
+
+
+GEO_DK = "DK"
+GEO_CN = "CN"
+GEO_OTHER = "Øvrig"
+
+
+def geo_of_rows(
+    df: pd.DataFrame, cn_types: list[str], dk_types: list[str]
+) -> pd.Series | None:
+    """
+    Udleder produktionssted pr. række ud fra 'Turnover type'.
+
+    Rækker hvis type ikke står på nogen af de to lister får ``GEO_OTHER``, så
+    de får deres egen knap frem for at forsvinde i stilhed.
+
+    Returnerer None hvis kolonnen mangler — så springes hele geo-opdelingen
+    over, og graferne får ingen DK/CN-knapper.
+    """
+    if find_column(df, TURNOVER_TYPE) is None:
+        return None
+    geo = pd.Series(GEO_OTHER, index=df.index, dtype=object)
+    geo[turnover_type_mask(df, dk_types)] = GEO_DK
+    geo[turnover_type_mask(df, cn_types)] = GEO_CN
+    return geo
 
 
 def turnover_type_mask(

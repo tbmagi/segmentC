@@ -17,7 +17,14 @@ import traceback
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from segmentering import Config
-from segmentering.config import Band
+from segmentering.config import (
+    Band,
+    clear_defaults,
+    dated_output_directory,
+    load_defaults,
+    save_defaults,
+    settings_path,
+)
 from segmentering.pipeline import run_analysis
 
 from .help_window import show_help_window
@@ -110,6 +117,7 @@ class SegmenteringApp(tk.Tk):
 
         # Beskeder fra beregningstråden til hovedtråden.
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self._settings_window: tk.Toplevel | None = None
 
         self._configure_style()
         self._create_variables()
@@ -145,8 +153,6 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std = tk.IntVar()
         self.var_outlier_metric = tk.StringVar()
 
-        self.var_split_item_type = tk.BooleanVar()
-        self.var_geo_split = tk.BooleanVar()
         self.var_cn_types = tk.StringVar()
         self.var_dk_types = tk.StringVar()
 
@@ -171,6 +177,13 @@ class SegmenteringApp(tk.Tk):
     # -- Opbygning ------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        """
+        Forsiden holdes bevidst kort: kun det man skal røre hver gang.
+
+        Alt andet ligger bag "Indstillinger", så vinduet ikke skræmmer nye
+        brugere væk. Indstillingerne deler de samme variabler, så en ændring
+        slår igennem med det samme — der er ikke noget at gemme eller bekræfte.
+        """
         page = ScrollableFrame(self)
 
         toolbar = ttk.Frame(page, padding=(10, 6))
@@ -180,123 +193,78 @@ class SegmenteringApp(tk.Tk):
             text="❓  Hjælp – hvordan behandles data?",
             command=lambda: show_help_window(self),
         ).pack(side="left")
-        ttk.Button(
-            toolbar, text="Nulstil til standarder", command=self.restore_defaults
-        ).pack(side="right")
 
-        self._build_file_section(page)
-        self._build_dates_section(page)
-        self._build_filter_section(page)
-        self._build_split_section(page)
-        self._build_calculation_section(page)
-        self._build_axes_section(page)
-        self._build_output_section(page)
+        self._build_essentials(page)
+        self._build_settings_bar(page)
         self._build_run_section(page)
         self._build_log_section(page)
 
-    def _build_file_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "1  Datafil")
-        frame.pack(fill="x", padx=10, pady=5)
+    # -- Forsiden -------------------------------------------------------------
 
-        ttk.Label(frame, text="Excel-fil (input):").grid(row=0, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=self.var_input_path, width=55).grid(
-            row=0, column=1, padx=5, pady=3, sticky="ew"
+    def _build_essentials(self, parent: tk.Widget) -> None:
+        frame = section(parent, "Analyse")
+        frame.pack(fill="x", padx=10, pady=(4, 6))
+
+        ttk.Label(frame, text="Excel-fil:").grid(row=0, column=0, sticky="w", pady=6)
+        ttk.Entry(frame, textvariable=self.var_input_path, width=52).grid(
+            row=0, column=1, columnspan=2, padx=5, pady=6, sticky="ew"
         )
         ttk.Button(frame, text="Vælg…", command=self._choose_input_file).grid(
-            row=0, column=2, padx=2
+            row=0, column=3, padx=2
         )
         help_icon(
             frame,
-            "Sti til Excel-filen med rå salgsdata.\n\n"
+            "Sti til Excel-filen med rå salgsdata (.xlsx, .xlsm eller .xls).\n\n"
             "Overskriftsrækken findes automatisk, så det gør ikke noget at "
             "tabellen starter længere nede i arket.\n\n"
             "Påkrævede kolonner: Statistics group, Item no., Year-mo, Cost, "
             "Qty., Turnover DKK, Local_COGS_DKK, Local_GP_DKK.\n\n"
-            "Valgfri kolonner:\n"
-            "  • Turnover type     – til frasortering og CN/DK-opdeling\n"
-            "  • Fiscal year       – til ny-kunde klassifikation\n"
-            "  • Industry_segment  – til farvelogik på plottet\n"
-            "  • KAM               – giver tænd/sluk-knapper pr. key account\n"
-            "                        manager på begge plots. Store og små\n"
-            "                        bogstaver er uden betydning, og kunder\n"
-            "                        uden KAM samles under '(Blank)'\n\n"
-            "Rækker med en periode efter 'Dags dato' regnes som budgettal og "
-            "udelades.",
-        ).grid(row=0, column=3, padx=(4, 0))
-
-        ttk.Label(frame, text="Output-mappe:").grid(row=1, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=self.var_output_dir, width=55).grid(
-            row=1, column=1, padx=5, pady=3, sticky="ew"
-        )
-        ttk.Button(frame, text="Vælg…", command=self._choose_output_dir).grid(
-            row=1, column=2, padx=2
-        )
-        help_icon(
-            frame,
-            "Mappe hvor HTML-plots og Excel-rapporten gemmes.\n\n"
-            "Lad feltet stå tomt for at gemme i samme mappe som programmet.",
-        ).grid(row=1, column=3, padx=(4, 0))
-
-        ttk.Label(frame, text="Basisnavn (filer):").grid(row=2, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=self.var_basename, width=55).grid(
-            row=2, column=1, padx=5, pady=3, sticky="ew"
-        )
-        help_icon(
-            frame,
-            "Fælles basisnavn for alle genererede filer:\n"
-            "  <basis>_kundegruppe.html\n"
-            "  <basis>_item.html\n"
-            "  <basis>.xlsx\n\n"
-            "Emne-type, geografi og kundeudvalg tilføjer suffikser:\n"
-            "  _sinter / _stoebe · _cn / _dk · _eks\n\n"
-            "Skriv uden filendelse, fx: kunde_segmentering",
-        ).grid(row=2, column=3, padx=(4, 0))
-
-        frame.columnconfigure(1, weight=1)
-
-    def _build_dates_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "2  Datoer & kundetyper")
-        frame.pack(fill="x", padx=10, pady=5)
-
-        heading(frame, "Felterne nedenfor definerer de tre kundetyper:").grid(
-            row=0, column=0, columnspan=4, sticky="w", pady=(0, 2)
-        )
-        labelled_entry(
-            frame, "Dags dato:", self.var_reference_date, row=1, hint="MM-ÅÅÅÅ",
-            tooltip=(
-                "Reference-datoen hele segmenteringen tager udgangspunkt i.\n\n"
-                "Format: MM-ÅÅÅÅ, fx 05-2026.\n\n"
-                "Perioder EFTER denne måned regnes som budgettal og udelades. "
-                "Er dags dato 06-2026, tæller 06-2026 med, mens 07-2026 og "
-                "frem falder fra."
-            ),
-        )
-        labelled_entry(
-            frame, "Eksisterende kunde vindue:", self.var_existing_months, row=2,
-            width=6, hint="måneder bagud fra dags dato",
-            tooltip=(
-                "Antal måneder bagud fra 'Dags dato' der definerer vinduet for "
-                "eksisterende kunder.\n\nTypisk værdi: 24 (2 år)."
-            ),
-        )
-        labelled_entry(
-            frame, "Ny-regnskabsår:", self.var_new_fiscal_year, row=3, hint="fx 2026/27",
-            tooltip=(
-                "Regnskabsår til identifikation af NYE kunder.\n\n"
-                "En kunde er 'Ny' hvis den har aktivitet i dette år og ingen "
-                "tidligere historik.\n\n"
-                "Lad feltet stå tomt for ikke at bruge regnskabsår-logikken."
-            ),
-        )
+            "Valgfri kolonner: Turnover type, Fiscal year, Industry_segment "
+            "og KAM. Hver af dem låser en ekstra knap op i graferne.",
+        ).grid(row=0, column=4, padx=(4, 0))
 
         ttk.Separator(frame, orient="horizontal").grid(
-            row=4, column=0, columnspan=4, sticky="ew", pady=6
+            row=1, column=0, columnspan=5, sticky="ew", pady=8
         )
+
+        ttk.Label(frame, text="Dags dato:").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Entry(frame, textvariable=self.var_reference_date, width=12).grid(
+            row=2, column=1, sticky="w", pady=4
+        )
+        ttk.Label(frame, text="MM-ÅÅÅÅ", foreground=HINT_COLOUR).grid(
+            row=2, column=2, sticky="w", padx=6
+        )
+        help_icon(
+            frame,
+            "Reference-datoen hele segmenteringen tager udgangspunkt i.\n\n"
+            "Udfyldes automatisk med indeværende måned.\n\n"
+            "Perioder EFTER denne måned regnes som budgettal og udelades. "
+            "Er dags dato 06-2026, tæller 06-2026 med, mens 07-2026 og frem "
+            "falder fra.",
+        ).grid(row=2, column=4, padx=(4, 0))
+
+        ttk.Label(frame, text="Ny-regnskabsår:").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Entry(frame, textvariable=self.var_new_fiscal_year, width=12).grid(
+            row=3, column=1, sticky="w", pady=4
+        )
+        ttk.Label(frame, text="fx 2026/27", foreground=HINT_COLOUR).grid(
+            row=3, column=2, sticky="w", padx=6
+        )
+        help_icon(
+            frame,
+            "Regnskabsår til identifikation af NYE kunder.\n\n"
+            "Udfyldes automatisk med indeværende år og året efter.\n\n"
+            "En kunde er 'Ny' hvis den kun har aktivitet i dette år og ingen "
+            "tidligere historik. Værdien skal passe med kolonnen "
+            "'Fiscal year' i Excel-filen.\n\n"
+            "Lad feltet stå tomt for ikke at bruge regnskabsår-logikken.",
+        ).grid(row=3, column=4, padx=(4, 0))
+
         self.label_customer_types = ttk.Label(
             frame, text="", foreground="#333", justify="left", font=("Helvetica", 9)
         )
         self.label_customer_types.grid(
-            row=5, column=0, columnspan=4, sticky="w", pady=(0, 2)
+            row=4, column=0, columnspan=5, sticky="w", pady=(10, 2)
         )
         for variable in (
             self.var_reference_date,
@@ -305,7 +273,120 @@ class SegmenteringApp(tk.Tk):
         ):
             variable.trace_add("write", lambda *_: self._update_customer_type_summary())
 
-        frame.columnconfigure(3, weight=1)
+        frame.columnconfigure(1, weight=1)
+
+    def _build_settings_bar(self, parent: tk.Widget) -> None:
+        bar = ttk.Frame(parent, padding=(10, 0))
+        bar.pack(fill="x")
+        ttk.Button(bar, text="⚙  Indstillinger…", command=self.open_settings).pack(side="left")
+        self.label_output_hint = ttk.Label(bar, text="", foreground=HINT_COLOUR)
+        self.label_output_hint.pack(side="left", padx=12)
+        self.var_output_dir.trace_add("write", lambda *_: self._update_output_hint())
+
+    def _update_output_hint(self) -> None:
+        if not hasattr(self, "label_output_hint"):
+            return
+        chosen = self.var_output_dir.get().strip()
+        self.label_output_hint.configure(
+            text=f"Gemmer i: {chosen}" if chosen
+            else f"Gemmer i: {os.path.basename(dated_output_directory())} (ved siden af programmet)"
+        )
+
+    # -- Indstillingsvinduet --------------------------------------------------
+
+    def open_settings(self) -> None:
+        """Åbner alle de øvrige indstillinger i sit eget vindue."""
+        if getattr(self, "_settings_window", None) is not None:
+            try:
+                self._settings_window.deiconify()
+                self._settings_window.lift()
+                return
+            except tk.TclError:
+                self._settings_window = None
+
+        window = tk.Toplevel(self)
+        self._settings_window = window
+        window.title("Indstillinger")
+        window.geometry("820x760")
+        window.minsize(700, 500)
+        window.transient(self)
+
+        page = ScrollableFrame(window)
+        self._build_output_location_section(page)
+        self._build_dates_section(page)
+        self._build_filter_section(page)
+        self._build_calculation_section(page)
+        self._build_axes_section(page)
+        self._build_output_section(page)
+
+        buttons = ttk.Frame(window, padding=(12, 10))
+        buttons.pack(fill="x", side="bottom")
+        ttk.Button(buttons, text="Luk", command=window.destroy).pack(side="right")
+        ttk.Button(
+            buttons, text="Nulstil til fabriksindstillinger",
+            command=self.reset_to_factory_defaults,
+        ).pack(side="left")
+        ttk.Button(
+            buttons, text="Gem som mine standardværdier",
+            command=self.save_as_defaults,
+        ).pack(side="left", padx=8)
+
+        self._update_gm_state()
+        self._update_outlier_state()
+
+        def _closed() -> None:
+            self._settings_window = None
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", _closed)
+
+    def _build_output_location_section(self, parent: tk.Widget) -> None:
+        frame = section(parent, "Placering af resultatet")
+        frame.pack(fill="x", padx=10, pady=5)
+
+        ttk.Label(frame, text="Output-mappe:").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.var_output_dir, width=50).grid(
+            row=0, column=1, padx=5, pady=3, sticky="ew"
+        )
+        ttk.Button(frame, text="Vælg…", command=self._choose_output_dir).grid(
+            row=0, column=2, padx=2
+        )
+        help_icon(
+            frame,
+            "Lad feltet stå TOMT — så oprettes en dateret mappe ved siden af "
+            "programmet, fx “Kundesegmentering 2026-09-15”.\n\n"
+            "Udfyldes feltet, bruges den mappe i stedet. Findes den ikke, "
+            "oprettes den.",
+        ).grid(row=0, column=3, padx=(4, 0))
+
+        ttk.Label(frame, text="Basisnavn (filer):").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.var_basename, width=50).grid(
+            row=1, column=1, padx=5, pady=3, sticky="ew"
+        )
+        help_icon(
+            frame,
+            "Fælles basisnavn for de genererede filer:\n"
+            "  <basis>_kundegruppe.html\n"
+            "  <basis>_item.html\n"
+            "  <basis>.xlsx\n\n"
+            "Skriv uden filendelse.",
+        ).grid(row=1, column=3, padx=(4, 0))
+
+        frame.columnconfigure(1, weight=1)
+
+
+    def _build_dates_section(self, parent: tk.Widget) -> None:
+        frame = section(parent, "Kundetyper")
+        frame.pack(fill="x", padx=10, pady=5)
+        labelled_entry(
+            frame, "Eksisterende kunde vindue:", self.var_existing_months, row=0,
+            width=6, hint="måneder bagud fra dags dato",
+            tooltip=(
+                "Antal måneder bagud fra 'Dags dato' der definerer vinduet for "
+                "eksisterende kunder.\n\nTypisk værdi: 24 (2 år).\n\n"
+                "Dags dato og ny-regnskabsår sættes på forsiden."
+            ),
+        )
 
     def _build_filter_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "3  Frasortering")
@@ -418,69 +499,6 @@ class SegmenteringApp(tk.Tk):
         ).grid(row=1, column=2, sticky="w", padx=(0, 4))
 
         frame.columnconfigure(1, weight=1)
-
-    def _build_split_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "4  Opdeling af plots")
-        frame.pack(fill="x", padx=10, pady=5)
-
-        ttk.Checkbutton(
-            frame, text="Opdel plots i sinter og støb", variable=self.var_split_item_type
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=3)
-        help_icon(
-            frame,
-            "Når den er slået til, genereres to sæt plots: ét for sinter-emner "
-            "og ét for støbe-emner.\n\n"
-            "Item no. klassificeres automatisk:\n"
-            "  • 60-67 + mindst 6 cifre  →  Støbe\n"
-            "  • 70-77 + mindst 6 cifre  →  Sinter\n"
-            "  • alt andet               →  frasorteres\n\n"
-            "Manuel overrulning via suffix på item no.:\n"
-            "  • -S1  →  Sinter\n"
-            "  • -S2  →  Støbe\n"
-            "  • -S0  →  fjern fra segmenteringen",
-        ).grid(row=0, column=3, sticky="w", padx=(4, 0))
-
-        ttk.Checkbutton(
-            frame, text="Opdel plots i DK og CN", variable=self.var_geo_split
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=3)
-        help_icon(
-            frame,
-            "Når den er slået til, genereres separate plots for DK og CN i "
-            "tillæg til det samlede plot — for både sinter og støb.\n\n"
-            "Kræver kolonnen 'Turnover type' i data. Hvilke turnover-typer der "
-            "hører til CN henholdsvis DK sættes nedenfor.",
-        ).grid(row=1, column=3, sticky="w", padx=(4, 0))
-
-        geo_panel = ttk.Frame(frame)
-        ttk.Label(geo_panel, text="CN turnover-typer (komma):").grid(
-            row=0, column=0, sticky="w", pady=2
-        )
-        ttk.Entry(geo_panel, textvariable=self.var_cn_types, width=45).grid(
-            row=0, column=1, sticky="ew", padx=5, pady=2
-        )
-        ttk.Label(geo_panel, text="DK turnover-typer (komma):").grid(
-            row=1, column=0, sticky="w", pady=2
-        )
-        ttk.Entry(geo_panel, textvariable=self.var_dk_types, width=45).grid(
-            row=1, column=1, sticky="ew", padx=5, pady=2
-        )
-        help_icon(
-            geo_panel,
-            "Definerer hvilke værdier i kolonnen 'Turnover type' der regnes som "
-            "CN- henholdsvis DK-produktion. Adskil med komma.",
-        ).grid(row=0, column=2, rowspan=2, sticky="w", padx=(4, 0))
-        geo_panel.columnconfigure(1, weight=1)
-
-        self.geo_disclosure = Disclosure(
-            frame,
-            "Turnover-typer pr. geografi",
-            geo_panel,
-            dict(row=3, column=0, columnspan=4, sticky="ew", padx=5, pady=(4, 0)),
-        )
-        self.geo_disclosure.button.grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(8, 0)
-        )
-        frame.columnconfigure(2, weight=1)
 
     def _build_calculation_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "5  Beregning")
@@ -727,7 +745,51 @@ class SegmenteringApp(tk.Tk):
     # -- Konfiguration ind og ud ---------------------------------------------
 
     def restore_defaults(self) -> None:
+        """
+        Fylder felterne med brugerens gemte standardværdier.
+
+        Findes der ingen gemt fil, bruges fabriksindstillingerne. Er filen
+        ødelagt, siges det tydeligt frem for at starte med halvt indlæste
+        indstillinger.
+        """
+        try:
+            self._load_config(load_defaults())
+        except ValueError as exc:
+            self._load_config(Config())
+            messagebox.showwarning("Gemte indstillinger kunne ikke læses", str(exc))
+
+    def save_as_defaults(self) -> None:
+        """Gemmer de nuværende indstillinger som brugerens standardværdier."""
+        try:
+            cfg = self._build_config()
+            cfg.validate()
+            target = save_defaults(cfg)
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showerror("Kunne ikke gemme", str(exc))
+            return
+        messagebox.showinfo(
+            "Gemt",
+            "Indstillingerne bruges nu som standard, næste gang programmet "
+            f"åbnes.\n\nGemt i:\n{target}\n\n"
+            "Dags dato og ny-regnskabsår gemmes ikke — de udfyldes altid ud "
+            "fra dagens dato.",
+        )
+
+    def reset_to_factory_defaults(self) -> None:
+        """Kasserer de gemte standardværdier og vender tilbage til udgangspunktet."""
+        if not messagebox.askyesno(
+            "Nulstil",
+            "Vil du kassere dine gemte standardværdier og vende tilbage til "
+            "programmets oprindelige indstillinger?",
+        ):
+            return
+        had_saved = clear_defaults()
         self._load_config(Config())
+        messagebox.showinfo(
+            "Nulstillet",
+            "Indstillingerne er sat tilbage til fabriksindstillingerne."
+            + (f"\n\nSlettede: {settings_path()}" if had_saved else ""),
+        )
 
     def _load_config(self, cfg: Config) -> None:
         self.var_input_path.set(cfg.input_path)
@@ -747,8 +809,6 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std.set(int(cfg.outlier_std_threshold))
         self.var_outlier_metric.set(cfg.outlier_metric)
 
-        self.var_split_item_type.set(cfg.split_by_item_type)
-        self.var_geo_split.set(cfg.geo_cn or cfg.geo_dk)
         self.var_cn_types.set(", ".join(cfg.cn_turnover_types))
         self.var_dk_types.set(", ".join(cfg.dk_turnover_types))
 
@@ -775,11 +835,11 @@ class SegmenteringApp(tk.Tk):
         self._update_gm_state()
         self._update_outlier_state()
         self._update_customer_type_summary()
+        self._update_output_hint()
 
     def _build_config(self) -> Config:
         """Læser skærmen til et ``Config``. Rejser ValueError ved ugyldige felter."""
         defaults = Config()
-        geo_split = self.var_geo_split.get()
 
         bands = {
             level: parse_band(variable.get(), f"Kundekategori {level}")
@@ -806,10 +866,6 @@ class SegmenteringApp(tk.Tk):
             remove_outliers=self.var_remove_outliers.get(),
             outlier_std_threshold=float(self.var_outlier_std.get()),
             outlier_metric=self.var_outlier_metric.get(),
-            split_by_item_type=self.var_split_item_type.get(),
-            geo_combined=True,
-            geo_cn=geo_split,
-            geo_dk=geo_split,
             cn_turnover_types=split_list(self.var_cn_types.get())
             or defaults.cn_turnover_types,
             dk_turnover_types=split_list(self.var_dk_types.get())
@@ -830,13 +886,25 @@ class SegmenteringApp(tk.Tk):
 
     # -- Tilstand -------------------------------------------------------------
 
+    def _widget_alive(self, name: str) -> bool:
+        """Findes widget'en, og er den ikke lukket sammen med vinduet?"""
+        widget = getattr(self, name, None)
+        try:
+            return widget is not None and bool(widget.winfo_exists())
+        except tk.TclError:
+            return False
+
     def _update_gm_state(self) -> None:
+        if not self._widget_alive("spin_gm_months"):
+            return
         enabled = self.var_weighted_gm.get()
         set_enabled(enabled, self.spin_gm_months)
         if enabled and self.var_gm_months.get() < 2:
             self.var_gm_months.set(3)
 
     def _update_outlier_state(self) -> None:
+        if not self._widget_alive("combo_outlier_std"):
+            return
         enabled = self.var_remove_outliers.get()
         set_enabled(
             enabled, self.combo_outlier_std, self.combo_outlier_metric, readonly=True
@@ -850,6 +918,8 @@ class SegmenteringApp(tk.Tk):
 
     def _update_customer_type_summary(self) -> None:
         """Skriver en letlæselig forklaring af de tre kundetyper ud fra felterne."""
+        if not self._widget_alive("label_customer_types"):
+            return
         reference = self.var_reference_date.get().strip() or "(dags dato)"
         try:
             months = int(self.var_existing_months.get())

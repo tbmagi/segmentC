@@ -211,12 +211,12 @@ def test_every_trace_carries_its_filter_values():
     """Scriptet matcher på trace.meta, så hvert spor skal bære sine værdier."""
     fig = group_scatter(groups_with_categories(), Config(), DATES)
     by_name = {t.name: t.meta for t in fig.data}
-    assert by_name["KUNDE A"] == {
-        "kundetype": "Eksisterende",
-        "kategori": "A+",
-        "kam": "PHA",
-    }
+    assert by_name["KUNDE A"]["kundetype"] == "Eksisterende"
+    assert by_name["KUNDE A"]["kategori"] == "A+"
+    assert by_name["KUNDE A"]["kam"] == "PHA"
     assert by_name["KUNDE D"]["kam"] == "(Blank)"
+    # Emne-type og produktion er også filterdimensioner nu
+    assert {"emnetype", "geografi"} <= set(by_name["KUNDE A"])
 
 
 def test_the_figure_says_which_menu_filters_on_what():

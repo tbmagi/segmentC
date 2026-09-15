@@ -18,12 +18,15 @@ from dateutil.relativedelta import relativedelta
 
 from .classify import classify_customer_category
 from .config import Config
+from .classify import ITEM_TYPE_LABELS
 from .dataio import (
     BLANK_KAM,
+    GEO,
     GROSS_PROFIT,
     GROUP,
     INDUSTRY_SEGMENT,
     ITEM_NO,
+    ITEM_TYPE,
     KAM,
     PERIOD,
     TURNOVER,
@@ -225,6 +228,8 @@ def item_metrics(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     # KAM der har kunden. Ellers kunne to varer hos samme kunde havne under
     # hver sin knap på item-plottet.
     per_item[KAM] = per_item[GROUP].map(kam_by_group(df))
+    for column, lookup in attributes_by_group(df).items():
+        per_item[column] = per_item[GROUP].map(lookup)
     return per_item
 
 
@@ -296,7 +301,31 @@ def group_metrics(
         _industry_segment_by_group(source_df)
     )
     per_group[KAM] = per_group[GROUP].map(kam_by_group(source_df))
+    for column, lookup in attributes_by_group(source_df).items():
+        per_group[column] = per_group[GROUP].map(lookup)
     return per_group
+
+
+#: Kolonnen graferne filtrerer emne-type på. Værdien er visningsnavnet
+#: (Sinter/Støb/Andet), så knappens tekst og dataene er det samme.
+ITEM_TYPE_LABEL = "_emnetype"
+
+
+def attributes_by_group(df: pd.DataFrame) -> dict[str, dict[str, object]]:
+    """
+    Slår emne-type og produktionssted op pr. analyseenhed.
+
+    Enheden er allerede delt op efter netop de to ting, så hver enhed har
+    præcis én af hver. Værdierne bæres med op på gruppeniveau, så graferne
+    kan filtrere på dem.
+    """
+    result: dict[str, dict[str, object]] = {}
+    if ITEM_TYPE in df.columns:
+        labels = df.groupby(GROUP)[ITEM_TYPE].first().map(ITEM_TYPE_LABELS)
+        result[ITEM_TYPE_LABEL] = labels.to_dict()
+    if GEO in df.columns:
+        result[GEO] = df.groupby(GROUP)[GEO].first().to_dict()
+    return result
 
 
 def _clean_kam(value: object) -> str | None:
@@ -312,7 +341,7 @@ def sort_kams(values: Iterable[object]) -> list[object]:
     return sorted(values, key=lambda v: (v == BLANK_KAM, str(v).casefold()))
 
 
-def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
+def kam_by_group(df: pd.DataFrame, key: str = GROUP) -> dict[str, object]:
     """
     Finder den ansvarlige KAM pr. kundegruppe.
 
@@ -329,6 +358,9 @@ def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
     rækker, men har kunden en KAM længere tilbage, bruges den sidst kendte —
     et tomt felt er som regel manglende data, ikke en kunde uden ansvarlig.
 
+    ``key`` er den kolonne der slås op på. Pipelinen bruger det rå kundenavn,
+    så en kundes sinter- og støbe-del altid hører til samme KAM.
+
     Kolonnen er valgfri. Findes den ikke, returneres et tomt opslag, og
     KAM-opdelingen springes helt over.
     """
@@ -336,8 +368,8 @@ def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
     if column is None:
         return {}
 
-    all_groups = df[GROUP].dropna().unique()
-    working = df[[GROUP, PERIOD, column]].copy()
+    all_groups = df[key].dropna().unique()
+    working = df[[key, PERIOD, column]].copy()
     working["_kam"] = working[column].map(_clean_kam)
     named = working[working["_kam"].notna()]
     if named.empty:
@@ -351,7 +383,7 @@ def kam_by_group(df: pd.DataFrame) -> dict[str, object]:
     for value in ordered["_kam"]:
         canonical[value.casefold()] = value
 
-    latest = ordered.groupby(GROUP)["_kam"].last()
+    latest = ordered.groupby(key)["_kam"].last()
     result: dict[str, object] = {
         group: canonical[value.casefold()] for group, value in latest.items()
     }

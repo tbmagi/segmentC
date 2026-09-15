@@ -19,6 +19,9 @@ SINTER = "sintere"
 CAST = "støbe"
 OTHER = "andet"
 
+#: Visningsnavne — det der står i knapperne og i kundenavnet.
+ITEM_TYPE_LABELS = {SINTER: "Sinter", CAST: "Støb", OTHER: "Andet"}
+
 #: Manuelle suffikser på item no. der overruler den automatiske regel.
 MANUAL_SUFFIXES = {"-S0": OTHER, "-S1": SINTER, "-S2": CAST}
 

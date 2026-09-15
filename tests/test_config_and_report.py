@@ -67,10 +67,6 @@ def test_gm_outside_zero_to_one_is_rejected():
         ({"group_plot_anchor": "kunden"}, "Forankring"),
         ({"y_scale": "kvadratisk"}, "Skala"),
         ({"colour_by": "regnbue"}, "Farvelogik"),
-        (
-            {"geo_combined": False, "geo_cn": False, "geo_dk": False},
-            "Mindst én geografisk opdeling",
-        ),
     ],
 )
 def test_invalid_settings_are_reported_in_danish(changes, message):
