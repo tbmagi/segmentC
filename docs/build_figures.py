@@ -131,12 +131,16 @@ def month_label(cx, y, label, colour):
                 weight="bold", anchor="end")
 
 
-def _month_axis(parts, scale, x_of, axis_y, left, right):
-    """Tidslinjen nederst. Kun kvartalsmånederne får en etiket."""
+def _month_axis(parts, scale, x_of, axis_y, left, right,
+                ticks=("-01", "-04", "-07", "-10")):
+    """
+    Tidslinjen nederst. Kun de måneder der står i ``ticks`` får en etiket —
+    over en lang periode ville kvartalsmærkater stå oven i hinanden.
+    """
     parts.append(line(left, axis_y, right, axis_y, RULE, 1.5))
     for month in scale:
         cx = x_of(month)
-        tick = month.endswith(("-01", "-04", "-07", "-10"))
+        tick = month.endswith(ticks)
         parts.append(line(cx, axis_y, cx, axis_y + (6 if tick else 3), RULE, 1))
         if tick:
             parts.append(
@@ -375,12 +379,154 @@ def anchoring():
     return W, H, parts
 
 
+# --- Figur 4: tidligere kunder -----------------------------------------------
+
+
+def former_customers():
+    """
+    Hvorfor filteret ikke rammer tidligere kunder hårdere end aktive.
+
+    Vinduet forankres i hver kundes EGEN seneste aktivitet. Øverst er det
+    sådan programmet gør; nederst er modstykket — et vindue låst til dags
+    dato — hvor hele den tidligere kunde ville forsvinde.
+    """
+    W, H = 1000, 764
+    left, right = 210, 820
+    scale = months(2021, 1, 68)  # 2021-01 til 2026-08
+    step = (right - left) / len(scale)
+
+    def x_of(label):
+        return left + scale.index(label) * step + step / 2
+
+    def span(start, stop):
+        return x_of(start) - step / 2, x_of(stop) + step / 2
+
+    customers = [
+        ("KUNDE NU", "Eksisterende", ("2025-06", "2026-05"), [
+            ("810001", ["2026-02", "2026-05"]),
+            ("810002", ["2023-04"]),
+        ]),
+        ("KUNDE FØR", "Tidligere", ("2021-09", "2022-08"), [
+            ("820001", ["2022-01", "2022-08"]),
+            ("820002", ["2021-02"]),
+        ]),
+    ]
+
+    parts = [
+        text(28, 38, "Tidligere kunder bliver ikke ramt hårdere", size=22,
+             weight="bold"),
+        text(28, 64,
+             "Vinduet følger kunden, ikke kalenderen — så en tidligere kunde "
+             "måles på sine egne sidste 12 måneder.",
+             size=14.5, colour=INK_2),
+    ]
+
+    row_h = 38
+    gap = 16  # ekstra luft mellem de to kunder
+
+    def block(y0, colour, soft, per_customer_window, dashed_band=False):
+        """Fire varerækker — enten med ét vindue pr. kunde eller ét fælles."""
+        out = []
+        y = y0
+        rows = []
+        for name, kind, window, items in customers:
+            first = y
+            for item, activity in items:
+                rows.append((name, kind, window, item, activity, y, first))
+                y += row_h
+            y += gap
+        if not per_customer_window:
+            # Ét fælles bånd: de seneste 12 måneder op til dags dato.
+            x0, x1 = span("2025-09", "2026-08")
+            out.append(rect(x0, y0 - 18, x1 - x0, rows[-1][5] - y0 + 36, soft,
+                            radius=4))
+            out.append(line(x0, y0 - 18, x0, rows[-1][5] + 18, colour, 2.5,
+                            dash="5 4" if dashed_band else None))
+            out.append(line(x1, y0 - 18, x1, rows[-1][5] + 18, colour, 2.5,
+                            dash="5 4"))
+        else:
+            for name, kind, window, items in customers:
+                matching = [r for r in rows if r[0] == name]
+                x0, x1 = span(*window)
+                top = matching[0][5] - 18
+                height = matching[-1][5] - matching[0][5] + 36
+                # Båndet står ud for kundens egne rækker, så det behøver ingen
+                # overskrift — den ville lande oven i månedsmærkaterne.
+                out.append(rect(x0, top, x1 - x0, height, soft, radius=4))
+                out.append(line(x0, top, x0, top + height, colour, 2.5))
+                out.append(line(x1, top, x1, top + height, colour, 2.5, dash="5 4"))
+
+        for name, kind, window, item, activity, y_row, first in rows:
+            inside = (window if per_customer_window else ("2025-09", "2026-08"))
+            kept = scale.index(activity[-1]) >= scale.index(inside[0])
+            mark = KEEP if kept else DROP
+            if y_row == first:
+                out.append(text(28, y_row + 1, name, size=13.5, weight="bold"))
+                out.append(text(28, y_row + 17, kind, size=11, colour=INK_2))
+            out.append(text(130, y_row + 5, item, size=13, weight="bold",
+                            colour=mark))
+            if not kept:
+                out.append(line(128, y_row, 128 + 50, y_row, DROP, 2))
+            for month in activity:
+                cx = x_of(month)
+                if kept:
+                    out.append(circle(cx, y_row, 7, mark, stroke=SURFACE, width=2))
+                else:
+                    out.append(circle(cx, y_row, 7, SURFACE, stroke=mark, width=2.5))
+            out.append(month_label(x_of(activity[-1]), y_row, activity[-1], mark))
+            out += chip(838, y_row, "Beholdes" if kept else "Fjernes", kept)
+        return out, y - gap
+
+    parts.append(
+        text(28, 108, "Sådan gør programmet — ét vindue pr. kunde",
+             size=16, weight="bold", colour=KEEP)
+    )
+    block_a, bottom_a = block(150, KEEP, KEEP_SOFT, per_customer_window=True)
+    parts += block_a
+    parts.append(
+        text(28, bottom_a + 34,
+             "Begge kunder beholder det de handlede til sidst, og mister det "
+             "der lå før. Samme regel, samme udfald.",
+             size=13, colour=INK_2)
+    )
+
+    divider = bottom_a + 58
+    parts.append(line(28, divider, 962, divider, RULE, 1))
+    parts.append(
+        text(28, divider + 34,
+             "Til sammenligning: et vindue låst til dags dato — sådan gør "
+             "programmet IKKE",
+             size=16, weight="bold", colour=DROP)
+    )
+    # Mærkatet for dags dato sættes ud for overskriften, ikke ned ved båndet,
+    # hvor det ville lande oven i et månedsmærkat.
+    parts.append(
+        text(span("2025-09", "2026-08")[1], divider + 34, "Dags dato",
+             size=12.5, colour=DROP, weight="bold", anchor="end")
+    )
+
+    block_b, bottom_b = block(divider + 76, DROP, DROP_SOFT,
+                              per_customer_window=False, dashed_band=True)
+    parts += block_b
+
+    axis_y = bottom_b + 42
+    _month_axis(parts, scale, x_of, axis_y, left, right, ticks=("-01",))
+    parts.append(
+        text(28, axis_y + 60,
+             "KUNDE FØR ville miste hver eneste vare og forsvinde helt ud af "
+             "analysen — ikke fordi den er uinteressant, men fordi den er gammel.",
+             size=13.5, colour=DROP, weight="bold")
+    )
+    return W, H, parts
+
+
 # --- Skrivning ---------------------------------------------------------------
 
 FIGURES = {
     "doede-items": dead_items,
     "budgettal": budget_rows,
     "forankring": anchoring,
+    "tidligere-kunder": former_customers,
 }
 
 

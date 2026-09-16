@@ -169,6 +169,38 @@ def test_drop_dead_items_is_a_no_op_for_a_zero_window():
     assert len(drop_dead_items(frame, window_months=0, log=lambda _: None)) == 1
 
 
+def test_a_former_customer_is_filtered_on_its_own_terms():
+    """
+    Vinduet forankres i KUNDENS egen seneste aktivitet, ikke i dags dato.
+
+    Lå det fast på dags dato, ville en tidligere kunde ikke have en eneste
+    vare inden for det, og hele kunden ville forsvinde ud af analysen. Med
+    forankringen i kunden måles en tidligere kunde på sine egne sidste 12
+    måneder — præcis som en aktiv kunde måles på sine.
+    """
+    frame = make_frame([
+        ("KUNDE NU", "810001", "2026-02", 100, 30),
+        ("KUNDE NU", "810001", "2026-05", 100, 30),
+        ("KUNDE NU", "810002", "2023-04", 100, 10),   # død hos en aktiv kunde
+        ("KUNDE FØR", "820001", "2022-01", 100, 30),
+        ("KUNDE FØR", "820001", "2022-08", 100, 30),
+        ("KUNDE FØR", "820002", "2021-02", 100, 10),  # død hos en tidligere kunde
+    ])
+    kept = drop_dead_items(frame, window_months=12, log=lambda _: None)
+
+    surviving = kept.groupby(GROUP)[ITEM_NO].apply(set).to_dict()
+    assert surviving["KUNDE NU"] == {"810001"}
+    assert surviving["KUNDE FØR"] == {"820001"}, (
+        "den tidligere kunde skal beholde det den handlede i sine sidste 12 mdr."
+    )
+
+    # Kundens seneste aktivitet bæres altid af en vare der overlever, så
+    # hverken kundetypen eller forankringen kan flytte sig af filteret.
+    assert frame.groupby(GROUP)[PERIOD].max().equals(
+        kept.groupby(GROUP)[PERIOD].max()
+    )
+
+
 # --- Samlet item-tabel -------------------------------------------------------
 
 

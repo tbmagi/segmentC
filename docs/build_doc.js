@@ -503,6 +503,37 @@ add(
       "forankringen er sat til under Beregning. Ellers ville en vare kunne " +
       "holde sig selv i live."
   ),
+  h2("Rammer det så de tidligere kunder?"),
+  p(
+    "Nej. Det er det første man frygter, når man hører at gamle varer " +
+      "sorteres fra — for en tidligere kunde er jo netop en hvis handel " +
+      "ligger tilbage i tiden. Men vinduet er **ikke** låst til kalenderen. " +
+      "Det lægges 12 måneder bagud fra **den enkelte kundes egen seneste " +
+      "aktivitet**, og det gælder alle kunder, uanset type."
+  ),
+  ...figure(
+    "tidligere-kunder", 1000, 764,
+    "Figur 3 — Hver kunde får sit eget vindue. Nederst ses hvad der ville ske " +
+      "hvis vinduet i stedet lå fast på dags dato."
+  ),
+  p(
+    "En tidligere kunde bliver altså målt på sine egne sidste 12 handelsmåneder, " +
+      "præcis som en aktiv kunde bliver målt på sine. Begge mister det de " +
+      "handlede før det — samme regel, samme udfald."
+  ),
+  p(
+    "Havde vinduet ligget fast på dags dato, ville billedet være et helt " +
+      "andet: så ville en kunde der stoppede for fire år siden ikke have en " +
+      "eneste vare inden for vinduet, og hele kunden ville forsvinde ud af " +
+      "analysen. Det er lige netop dét, forankringen i kunden forhindrer."
+  ),
+  note(
+    "Og kundetypen flytter sig ikke:",
+    "den vare der bærer kundens seneste aktivitet er per definition inde i " +
+      "kundens eget vindue, så den overlever altid filteret. Derfor kan " +
+      "frasorteringen aldrig ændre hvornår en kunde sidst handlede — og " +
+      "dermed heller ikke om den er Eksisterende, Ny eller Tidligere."
+  ),
   h2("Trin 2 — Item-type: sinter eller støb"),
   p("Varenummeret afgør typen ud fra de to første cifre:"),
   code([
@@ -563,7 +594,7 @@ add(
   ),
   ...figure(
     "forankring", 1000, 502,
-    "Figur 3 — Samme to varer, samme data. Forankringen afgør hvilken " +
+    "Figur 4 — Samme to varer, samme data. Forankringen afgør hvilken " +
       "periode hver vare måles over."
   ),
   h2("Trin 6 — Outlier-filter"),
