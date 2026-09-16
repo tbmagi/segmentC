@@ -121,11 +121,41 @@ HELP_CONTENT: list[Block] = [
     (HEADING, "Trin 3: Kundetype\n"),
     (
         BODY,
-        "Hver kundegruppe klassificeres som én af tre typer:\n"
-        "  • Ny – aktivitet kun i det valgte regnskabsår, ingen tidligere historik\n"
-        "  • Eksisterende – aktivitet inden for 'Eksisterende kunde vindue' "
-        "bagud fra 'Dags dato'\n"
-        "  • Tidligere – al aktivitet ligger uden for begge vinduer\n\n",
+        "To perioder afgør det hele. Begge regnes ud fra datoerne i data — "
+        "ikke ud fra kolonnen 'Fiscal year':\n\n"
+        "  • Ny-regnskabsåret, fra sin startmåned og 12 måneder frem\n"
+        "  • Eksisterende-vinduet, N måneder bagud fra 'Dags dato'\n\n"
+        "Med dags dato 09-2026, 24 måneders vindue og regnskabsåret 2026/2027 "
+        "der begynder i maj:\n",
+    ),
+    (
+        TABLE,
+        "    Ny-regnskabsår:       05-2026  ——————→  04-2027\n"
+        "    Eksisterende-vindue:  09-2024  ——————→  09-2026\n\n",
+    ),
+    (
+        NOTE,
+        "De to perioder overlapper fra 05-2026 og frem. Derfor afgøres typen "
+        "i en fast rækkefølge.\n\n",
+    ),
+    (
+        BODY,
+        "  • Ny – HELE kundens historik ligger i ny-regnskabsåret\n"
+        "  • Eksisterende – mindst én handel i eksisterende-vinduet\n"
+        "  • Tidligere – al aktivitet ligger før vinduet\n\n"
+        "Det er hele historikken der skal ligge i ny-året, ikke bare den "
+        "seneste handel. En kunde der vender tilbage efter tre års pause er "
+        "altså ikke ny — den er eksisterende.\n\n",
+    ),
+    (
+        EXAMPLE,
+        "  Kunde   Handler i               Type\n"
+        "  ─────────────────────────────────────────────\n"
+        "  A       05-2026 og 09-2026      Ny\n"
+        "  B       01-2026 og 06-2026      Eksisterende\n"
+        "  C       01-2023 og 06-2026      Eksisterende  (vendt tilbage)\n"
+        "  D       12-2023 og 12-2025      Eksisterende\n"
+        "  E       01-2022 og 03-2023      Tidligere\n\n",
     ),
 
     (HEADING, "Trin 4: Pr. item no. – seneste måned(er)\n"),

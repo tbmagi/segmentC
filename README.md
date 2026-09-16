@@ -89,7 +89,6 @@ Disse er valgfrie og aktiverer hver sin funktion:
 | Kolonne | Bruges til |
 | --- | --- |
 | `Turnover type` | frasortering og CN/DK-opdeling |
-| `Fiscal year` | identifikation af nye kunder |
 | `Industry_segment` | kantfarve på kundegruppe-plottet, med en fremhæv-knap pr. branche |
 | `KAM` | tænd/sluk-knapper pr. key account manager på begge plots |
 
@@ -104,7 +103,18 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
 2. **Item-type** – item no. klassificeres som sinter (70–77) eller støbe
    (60–67) ud fra de to første cifre og mindst 6 cifre. Et suffix på nummeret
    overruler reglen: `-S1` sinter, `-S2` støbe, `-S0` fjern helt.
-3. **Kundetype** – hver kundegruppe bliver Ny, Eksisterende eller Tidligere.
+3. **Kundetype** – Ny, Eksisterende eller Tidligere, afgjort af to
+   perioder der begge regnes ud fra datoerne i data:
+
+   * **Ny-regnskabsåret** løber fra sin startmåned og 12 måneder frem.
+     Begynder året i maj, er 2026/2027 altså 05-2026 til og med 04-2027.
+   * **Eksisterende-vinduet** er N måneder bagud fra dags dato, begge ender
+     inklusive.
+
+   Perioderne overlapper, så rækkefølgen afgør: ligger **hele** historikken i
+   ny-regnskabsåret er kunden `Ny`; ellers er den `Eksisterende` hvis mindst
+   én handel falder i vinduet; ellers `Tidligere`. En kunde der vender
+   tilbage efter års pause er altså eksisterende, ikke ny.
 4. **GM% pr. item** – seneste aktivitetsmåned, eller de seneste N måneder
    summeret hvis vægtet GM% er slået til.
 5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
@@ -131,6 +141,16 @@ knapperne under plottet slår en hel blok fra:
 
 Knaprækkerne under kundegruppe-plottet er kundetype, kategori, KAM og
 branche. Under item-plottet er de volumenkrav, kategori og KAM.
+
+En knap er **grøn når den er tændt** og **rød når den er slukket**.
+Volumenkravene har omvendt fortegn — det er et enten-eller-valg, så den
+valgte er grøn og de fravalgte røde. Fremhæv-knapperne bliver hverken grønne
+eller røde: de skjuler ingenting. De to nuancer er også forskellige i lyshed,
+så tilstanden kan aflæses af en rødgrønt farveblind.
+
+Over kundegruppe-plottet står en **farvekode** for kundetyperne. Den ligger
+uden for selve grafen — som almindelig HTML over plottet — så den hverken
+stjæler plads fra punkterne eller kan slås fra ved et uheld.
 
 Knaprækkerne virker som **filtre der begrænser hinanden**, ikke som
 uafhængige kontakter. Har du slået alt fra på nær én KAM, og slukker og
@@ -184,7 +204,23 @@ Knappen **Gem som mine standardværdier** i indstillingsvinduet skriver
 gang programmet åbnes, og følger med hvis mappen kopieres til en kollega.
 
 Dags dato og ny-regnskabsår gemmes ikke — de udfyldes altid ud fra dagens
-dato. Er det 15-09-2026, står der `09-2026` og `2026/2027`.
+dato. Er det 15-09-2026, står der `09-2026` og `2026/2027`. Regnskabsåret
+følger sin startmåned: i januar til april er man stadig i det år der begyndte
+året før, så 10-02-2026 giver `2025/2026`.
+
+## Adgangskode
+
+Programmet beder om en kode inden brugerfladen åbnes. Koden ligger som et
+SHA-256 aftryk i `gui/login.py` og kan skiftes med:
+
+```bash
+python -c "import hashlib; print(hashlib.sha256('nykode'.encode()).hexdigest())"
+```
+
+Det er en dørklokke, ikke en lås: den der kan køre programmet kan prøve sig
+frem, og den der kan læse kildekoden kan skifte aftrykket ud. Den holder
+programmet fra at blive åbnet af nogen der ikke skal bruge det — den
+beskytter ikke data.
 
 ## Projektets opbygning
 
@@ -203,6 +239,7 @@ gui/                   Tkinter-brugerfladen
   app.py               hovedvinduet
   widgets.py           hjælpebobler, sektioner, rulbar side
   help_window.py       "Sådan behandles data"
+  login.py             adgangskoden
 
 run_gui.py             start brugerfladen
 build_exe.py           pak programmet til én fil der kan dobbeltklikkes

@@ -104,6 +104,63 @@ TOGGLE_GUARD = ("marker.opacity", 1)
 #: de rækker den nulstiller.
 RESET_LABEL = "↺  Nulstil alle filtre"
 
+# Knappernes farver. Grøn = tændt, rød = slukket.
+#
+# Rød og grøn er svær at skelne for en rødgrønt farveblind, så de to nuancer
+# er valgt så de også adskiller sig i lyshed: den røde er mærkbart mørkere end
+# den grønne. Så kan tilstanden aflæses uden at kunne se forskel på kulørerne
+# (deutan ΔE 16,8 — godt over gulvet på 8).
+BUTTON_ON = "#e4f6e7"
+BUTTON_ON_EDGE = "#4f9a63"
+BUTTON_OFF = "#e0a9a5"
+BUTTON_OFF_EDGE = "#b05b56"
+BUTTON_NEUTRAL = "#f2f1ee"
+BUTTON_NEUTRAL_EDGE = "#b8b6b0"
+
+
+# Plotly har ingen indstilling for farven på en nedtrykt knap: den tegnes med
+# en fast bleg blå, og kun de utrykte følger ``bgcolor``. Tilstanden males
+# derfor af scriptet i den færdige HTML, som sætter ``bgcolor`` pr. knap og
+# holder Plotlys egen "active" på -1, så den faste blå aldrig kommer i spil.
+# Værdierne herunder er kun udgangspunktet inden første klik.
+
+
+def filter_colours() -> dict:
+    """En filterknap starter tændt: værdien vises."""
+    return dict(bgcolor=BUTTON_ON, bordercolor=BUTTON_ON_EDGE, borderwidth=1)
+
+
+def level_colours(chosen: bool) -> dict:
+    """
+    Volumenkrav er et enten-eller-valg med omvendt fortegn af filtrene: den
+    valgte er grøn, de fravalgte røde.
+    """
+    return dict(
+        bgcolor=BUTTON_ON if chosen else BUTTON_OFF,
+        bordercolor=BUTTON_ON_EDGE if chosen else BUTTON_OFF_EDGE,
+        borderwidth=1,
+    )
+
+
+def highlight_colours() -> dict:
+    """
+    Fremhæv-knapperne er hverken tændt eller slukket.
+
+    De skjuler ingenting — de gør kun en branche tykkere i kanten. Rød ville
+    påstå at noget var slået fra, så de bliver stående neutrale og overlades
+    til Plotlys egen markering af hvad der er trykket ned.
+    """
+    return dict(
+        bgcolor=BUTTON_NEUTRAL, bordercolor=BUTTON_NEUTRAL_EDGE, borderwidth=1
+    )
+
+
+def neutral_colours() -> dict:
+    """Nulstil-knappen er en handling, ikke en tilstand."""
+    return dict(
+        bgcolor=BUTTON_NEUTRAL, bordercolor=BUTTON_NEUTRAL_EDGE, borderwidth=1
+    )
+
 
 def button_area_margin(rows: int) -> int:
     """Bundmargen der giver plads til ``rows`` knaprækker."""
@@ -317,25 +374,62 @@ def toggle_buttons(
 _FILTER_SCRIPT = """
 (function () {
   var RESET_LABEL = "__RESET_LABEL__";
+  var PREFIX = "__PREFIX__";
+  var ON = "__ON__", ON_EDGE = "__ON_EDGE__";
+  var OFF = "__OFF__", OFF_EDGE = "__OFF_EDGE__";
   var gd = document.getElementById('{plot_id}');
   if (!gd) { return; }
   var meta = (gd.layout && gd.layout.meta) || {};
   var dimensionByMenu = meta.filters || {};
   var resetMenu = (meta.reset === undefined || meta.reset === null)
                   ? null : Number(meta.reset);
-  if (!Object.keys(dimensionByMenu).length) { return; }
+  var levelMenus = (meta.krav || []).map(Number);
+  var chosenLevel = (meta.valgt === undefined || meta.valgt === null)
+                    ? null : Number(meta.valgt);
+  if (!Object.keys(dimensionByMenu).length && !levelMenus.length) { return; }
+
+  // Scriptet fører selv regnskab med hvad der er trykket ned. Plotlys egen
+  // "active" holdes på -1, fordi en aktiv knap ellers tegnes med en fast
+  // bleg blå der ikke kan sættes — og så kunne hverken grøn eller rød ses.
+  var pressed = {};
+
+  function menus() {
+    return (gd._fullLayout && gd._fullLayout.updatemenus)
+           || (gd.layout && gd.layout.updatemenus) || [];
+  }
+
+  // Grøn = vises, rød = skjult. For volumenkrav er fortegnet omvendt:
+  // den valgte er grøn, de fravalgte røde.
+  function colours() {
+    var update = {};
+    Object.keys(dimensionByMenu).forEach(function (index) {
+      var on = !pressed[index];
+      update['updatemenus[' + index + '].bgcolor'] = on ? ON : OFF;
+      update['updatemenus[' + index + '].bordercolor'] = on ? ON_EDGE : OFF_EDGE;
+      update['updatemenus[' + index + '].active'] = -1;
+    });
+    levelMenus.forEach(function (index) {
+      var chosen = index === chosenLevel;
+      update['updatemenus[' + index + '].bgcolor'] = chosen ? ON : OFF;
+      update['updatemenus[' + index + '].bordercolor'] = chosen ? ON_EDGE : OFF_EDGE;
+      update['updatemenus[' + index + '].active'] = -1;
+    });
+    if (resetMenu !== null) {
+      update['updatemenus[' + resetMenu + '].active'] = -1;
+    }
+    return update;
+  }
 
   function apply() {
-    var menus = (gd._fullLayout && gd._fullLayout.updatemenus)
-                || (gd.layout && gd.layout.updatemenus) || [];
+    var all = menus();
     // Saml de fravalgte værdier pr. række (kundetype, kategori, KAM ...).
     var deselected = {};
     Object.keys(dimensionByMenu).forEach(function (index) {
-      var menu = menus[Number(index)];
+      var menu = all[Number(index)];
       if (!menu || !menu.buttons || !menu.buttons.length) { return; }
       var dimension = dimensionByMenu[index];
       if (!deselected[dimension]) { deselected[dimension] = []; }
-      if (menu.active === 0) {
+      if (pressed[index]) {
         deselected[dimension].push(String(menu.buttons[0].label));
       }
     });
@@ -350,34 +444,101 @@ _FILTER_SCRIPT = """
       return true;
     });
     Plotly.restyle(gd, {visible: visible});
-  }
-
-  // Slår alle filterrækker fra og viser alt igen.
-  function reset() {
-    var update = {};
-    Object.keys(dimensionByMenu).forEach(function (index) {
-      update['updatemenus[' + index + '].active'] = -1;
-    });
-    update['updatemenus[' + resetMenu + '].active'] = -1;
-    Plotly.relayout(gd, update).then(apply);
+    Plotly.relayout(gd, colours());
   }
 
   function clickedMenuIndex(event) {
-    var menus = (gd._fullLayout && gd._fullLayout.updatemenus) || [];
-    for (var i = 0; i < menus.length; i++) {
-      if (menus[i] === event.menu) { return i; }
+    // Navnet bærer pladsen. Objekt-identitet dur ikke: en kravknap laver en
+    // relayout, og bagefter er det klikkede objekt ikke det samme længere.
+    var name = event.menu && event.menu.name;
+    if (typeof name === 'string' && name.indexOf(PREFIX) === 0) {
+      return Number(name.slice(PREFIX.length));
     }
-    // Falder identiteten fra hinanden, kendes nulstil-knappen på sin tekst.
+    var all = menus();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] === event.menu) { return i; }
+    }
+    // Sidste udvej: nulstil-knappen kendes på sin tekst.
     if (event.button && event.button.label === RESET_LABEL) { return resetMenu; }
     return -1;
   }
 
   gd.on('plotly_buttonclicked', function (event) {
     var index = clickedMenuIndex(event);
-    setTimeout(index === resetMenu && resetMenu !== null ? reset : apply, 0);
+    if (index < 0) { return; }
+    if (resetMenu !== null && index === resetMenu) {
+      pressed = {};                       // alle filtre tændes igen
+    } else if (levelMenus.indexOf(index) !== -1) {
+      chosenLevel = index;                // kravene er et enten-eller-valg
+    } else if (dimensionByMenu[index] !== undefined) {
+      pressed[index] = !pressed[index];
+    } else {
+      return;                             // fremhæv-knapper passer sig selv
+    }
+    setTimeout(apply, 0);
   });
+
+  Plotly.relayout(gd, colours());         // sæt farverne inden første klik
 })();
 """
+
+
+#: JavaScript der lægger en farveforklaring ind OVER selve grafen — som
+#: almindelig HTML, ikke som en annotation inde i plotområdet. Så stjæler den
+#: ingen plads fra punkterne, og den kan ikke slås fra ved et uheld.
+_COLOUR_KEY_SCRIPT = """
+(function () {
+  var gd = document.getElementById('{plot_id}');
+  if (!gd) { return; }
+  var meta = (gd.layout && gd.layout.meta) || {};
+  var key = meta.farvekode;
+  if (!key || !key.items || !key.items.length) { return; }
+  var id = 'farvekode-' + gd.id;
+  if (document.getElementById(id)) { return; }
+
+  var box = document.createElement('div');
+  box.id = id;
+  box.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:18px;'
+    + 'font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
+    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 auto 4px auto;'
+    + 'border:1px solid #d8d6d0;border-radius:6px;background:#fbfbfa;'
+    + 'width:max-content;max-width:100%;';
+
+  var title = document.createElement('span');
+  title.textContent = key.title;
+  title.style.cssText = 'font-weight:600;color:#1a4a7a;';
+  box.appendChild(title);
+
+  key.items.forEach(function (item) {
+    var entry = document.createElement('span');
+    entry.style.cssText = 'display:inline-flex;align-items:center;gap:7px;';
+    var dot = document.createElement('span');
+    dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex:0 0 auto;'
+      + 'background:' + item.colour + ';border:1px solid rgba(0,0,0,0.35);';
+    var label = document.createElement('span');
+    label.textContent = item.label;
+    entry.appendChild(dot);
+    entry.appendChild(label);
+    box.appendChild(entry);
+  });
+
+  gd.parentNode.insertBefore(box, gd);
+})();
+"""
+
+
+def colour_key(title: str, items: Sequence[tuple[str, str]]) -> dict:
+    """Beskrivelsen af farveforklaringen, som scriptet bygger ud fra."""
+    return {
+        "title": title,
+        "items": [{"label": label, "colour": colour} for label, colour in items],
+    }
+
+
+def colour_key_script(fig: "go.Figure") -> str | None:
+    """Returnerer forklarings-scriptet hvis figuren har en farvekode."""
+    meta = fig.layout.meta or {}
+    return _COLOUR_KEY_SCRIPT if meta.get("farvekode") else None
 
 
 def reset_button() -> dict:
@@ -394,9 +555,15 @@ def filter_script(fig: "go.Figure") -> str | None:
     skulle glippe.
     """
     meta = fig.layout.meta or {}
-    if not meta.get("filters"):
+    if not meta.get("filters") and not meta.get("krav"):
         return None
-    return _FILTER_SCRIPT.replace("__RESET_LABEL__", RESET_LABEL)
+    script = _FILTER_SCRIPT.replace("__RESET_LABEL__", RESET_LABEL)
+    for token, colour in (
+        ("__ON_EDGE__", BUTTON_ON_EDGE), ("__OFF_EDGE__", BUTTON_OFF_EDGE),
+        ("__ON__", BUTTON_ON), ("__OFF__", BUTTON_OFF),
+    ):
+        script = script.replace(token, colour)
+    return script.replace("__PREFIX__", MENU_NAME_PREFIX)
 
 
 def stack_button_rows(
@@ -422,7 +589,10 @@ def stack_button_rows(
         if not buttons:
             continue
         row_menus, rows = flow_button_menus(
-            buttons, y_start=y, x_offset=_label_width(label) if label else 0.0
+            buttons,
+            y_start=y,
+            x_offset=_label_width(label) if label else 0.0,
+            style=row_colours(dimension),
         )
         menus.extend(row_menus)
         dimensions.extend([dimension] * len(row_menus))
@@ -435,6 +605,32 @@ def stack_button_rows(
 
 #: Markerer den menu der rummer nulstil-knappen.
 RESET_DIMENSION = "_reset"
+
+#: Forstavelsen på menu-navnene scriptet genkender knapperne på.
+MENU_NAME_PREFIX = "menu-"
+
+
+def number_menus(menus: list[dict]) -> list[dict]:
+    """
+    Giver hver menu et navn med sin egen plads i.
+
+    Scriptet skal kunne genkende hvilken knap der blev trykket på. At
+    sammenligne objekter dur ikke: en kravknap laver en ``relayout``, og så
+    bygger Plotly menuerne forfra, hvorefter det klikkede objekt ikke længere
+    er det samme som det i layoutet. Navnet overlever den ombygning.
+    """
+    for index, menu in enumerate(menus):
+        menu["name"] = f"{MENU_NAME_PREFIX}{index}"
+    return menus
+
+
+def row_colours(dimension: str | None) -> dict:
+    """Farverne til en knaprække, udledt af hvad rækken gør."""
+    if dimension == RESET_DIMENSION:
+        return neutral_colours()
+    if dimension is None:  # fremhæver kun, skjuler ingenting
+        return highlight_colours()
+    return filter_colours()
 
 
 def filter_metadata(dimensions: Sequence[str | None]) -> dict:
@@ -460,7 +656,10 @@ def filter_metadata(dimensions: Sequence[str | None]) -> dict:
 
 
 def flow_button_menus(
-    buttons: Sequence[dict], y_start: float, x_offset: float = 0.0
+    buttons: Sequence[dict],
+    y_start: float,
+    x_offset: float = 0.0,
+    style: Mapping[str, object] | None = None,
 ) -> tuple[list[dict], int]:
     """
     Placerer én-knaps-menuer på rad og bryder til en ny række når rækken er fuld.
@@ -495,6 +694,7 @@ def flow_button_menus(
                 yanchor="top",
                 pad={"r": 4, "t": 4},
                 buttons=[button],
+                **(style or {}),
             )
         )
         x += width + spacing
@@ -737,6 +937,20 @@ def group_scatter(
     )
     annotations = annotations + row_labels
 
+    # Farveforklaringen lægges uden for grafen af scriptet. Den skal vise det
+    # farven RENT FAKTISK følger — kundetype eller branche.
+    if colour_by_segment:
+        key = colour_key(
+            "Farve = Industry segment:",
+            [(str(segment), segment_colours[segment]) for segment in segments],
+        )
+    else:
+        key = colour_key(
+            "Farve = kundetype:",
+            [(t, CUSTOMER_TYPE_COLOURS[t]) for t in types_present
+             if t in CUSTOMER_TYPE_COLOURS],
+        )
+
     subtitle_extra = title_suffix
     if has_industry and not colour_by_segment:
         subtitle_extra = "  |  ".join(
@@ -753,8 +967,8 @@ def group_scatter(
         ),
         shapes=shapes,
         annotations=annotations,
-        updatemenus=menus,
-        meta=filter_metadata(dimensions),
+        updatemenus=number_menus(menus),
+        meta={**filter_metadata(dimensions), "farvekode": key},
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
             itemclick="toggle",
@@ -915,7 +1129,22 @@ def item_scatter(
     # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
     # så KAM — og nederst nulstil-knappen.
     level_label = "Volumenkrav:"
-    below_levels = BUTTON_FIRST_ROW_Y - BUTTON_ROW_GAP
+    level_offset = _label_width(level_label)
+    level_names = [f"Krav {level}" for level in levels]
+
+    # Hvor mange rækker kravknapperne fylder afhænger kun af deres bredde, så
+    # det kan tælles før de bygges færdige — og resten kan lægges nedenunder.
+    level_rows = (
+        flow_button_menus(
+            [dict(label=name) for name in level_names],
+            y_start=BUTTON_FIRST_ROW_Y,
+            x_offset=level_offset,
+        )[1]
+        if level_names
+        else 0
+    )
+    below_levels = BUTTON_FIRST_ROW_Y - max(level_rows, 1) * BUTTON_ROW_GAP
+
     button_groups: list[tuple[str, str | None, list[dict]]] = [
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
     ]
@@ -935,11 +1164,11 @@ def item_scatter(
     static_annotations = [_row_label(level_label, BUTTON_FIRST_ROW_Y)] + row_labels
 
     level_buttons = []
-    for level in levels:
+    for level, name in zip(levels, level_names):
         level_shapes, level_annotations = volume_zone_shapes(level, cfg)
         level_buttons.append(
             dict(
-                label=f"Krav {level}",
+                label=name,
                 method="relayout",
                 args=[
                     {
@@ -950,28 +1179,24 @@ def item_scatter(
             )
         )
 
+    # Hver kravknap får sin egen menu. Ellers deler alle fire knapper én
+    # baggrundsfarve, og så kan den valgte ikke skille sig ud som grøn.
     menus: list[dict] = []
     if level_buttons:
-        menus.append(
-            dict(
-                type="buttons",
-                direction="right",
-                showactive=True,
-                active=levels.index(default_level) if default_level in levels else 0,
-                x=_label_width(level_label),
-                xanchor="left",
-                y=BUTTON_FIRST_ROW_Y,
-                yanchor="top",
-                pad={"r": 6, "t": 4},
-                buttons=level_buttons,
-            )
+        menus, _ = flow_button_menus(
+            level_buttons, y_start=BUTTON_FIRST_ROW_Y, x_offset=level_offset
         )
+        for menu, level in zip(menus, levels):
+            menu.update(level_colours(level == default_level))
+
+    level_menus = list(range(len(menus)))
+    chosen_level = levels.index(default_level) if default_level in levels else None
     menus.extend(menus_below)
-    # Kravmenuen ligger forrest og er ikke et filter, så den fylder en plads.
-    dimensions = ([None] * (len(menus) - len(menus_below))) + dimensions_below
+    # Kravmenuerne ligger forrest og er ikke filtre, så de fylder hver en plads.
+    dimensions = ([None] * len(level_menus)) + dimensions_below
     annotations = zone_annotations + static_annotations
-    # Plads til kravrækken plus de rækker de øvrige knapper fylder.
-    button_rows = 1 + rows_below
+    # Plads til kravrækkerne plus de rækker de øvrige knapper fylder.
+    button_rows = max(level_rows, 1) + rows_below
 
     fig.update_layout(
         title=dict(
@@ -983,8 +1208,12 @@ def item_scatter(
         ),
         shapes=shapes,
         annotations=annotations,
-        updatemenus=menus,
-        meta=filter_metadata(dimensions),
+        updatemenus=number_menus(menus),
+        meta={
+            **filter_metadata(dimensions),
+            "krav": level_menus,
+            "valgt": chosen_level,
+        },
         margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
         legend=dict(
             title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
@@ -1049,7 +1278,8 @@ INCLUDE_PLOTLYJS = True
 
 
 def write_html(fig: "go.Figure", path: str, label: str, log: Log = print) -> None:
+    scripts = [s for s in (colour_key_script(fig), filter_script(fig)) if s]
     pio.write_html(
-        fig, path, include_plotlyjs=INCLUDE_PLOTLYJS, post_script=filter_script(fig)
+        fig, path, include_plotlyjs=INCLUDE_PLOTLYJS, post_script=scripts or None
     )
     log(f"[{label}] gemt til: {path}")

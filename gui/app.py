@@ -19,6 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from segmentering import Config
 from segmentering.config import (
     Band,
+    FISCAL_YEAR_START_MONTH,
     clear_defaults,
     load_defaults,
     save_defaults,
@@ -27,6 +28,7 @@ from segmentering.config import (
 from segmentering.pipeline import run_analysis
 
 from .help_window import show_help_window
+from .login import ask_for_access_code
 from .widgets import (
     Disclosure,
     HINT_COLOUR,
@@ -52,6 +54,14 @@ ZONE_COLOURS = {
 }
 
 BAND_FORMAT_HINT = "Format: min,max,gm%  (maks tom = ingen øvre grænse)"
+
+#: Månedsnavne til valget af regnskabsårets start. Gemmes som tal, vises som navn.
+MONTH_NAMES = {
+    1: "Januar", 2: "Februar", 3: "Marts", 4: "April", 5: "Maj", 6: "Juni",
+    7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November",
+    12: "December",
+}
+MONTH_NUMBERS = {name: number for number, name in MONTH_NAMES.items()}
 
 #: Hele udskriften fra en kørsel lægges her, ved siden af resultatet.
 LOG_FILENAME = "analyse-log.txt"
@@ -149,6 +159,7 @@ class SegmenteringApp(tk.Tk):
         self.var_reference_date = tk.StringVar()
         self.var_existing_months = tk.IntVar()
         self.var_new_fiscal_year = tk.StringVar()
+        self.var_fiscal_start_month = tk.StringVar()
 
         self.var_excluded_groups = tk.StringVar()
         self.var_excluded_turnover_types = tk.StringVar()
@@ -372,9 +383,30 @@ class SegmenteringApp(tk.Tk):
             tooltip=(
                 "Antal måneder bagud fra 'Dags dato' der definerer vinduet for "
                 "eksisterende kunder.\n\nTypisk værdi: 24 (2 år).\n\n"
+                "Begge ender tæller med: med 24 måneder og dags dato 09-2026 "
+                "går vinduet fra 09-2024 til og med 09-2026.\n\n"
                 "Dags dato og ny-regnskabsår sættes på forsiden."
             ),
         )
+
+        ttk.Label(frame, text="Regnskabsåret begynder i:").grid(
+            row=1, column=0, sticky="w", pady=3, padx=(0, 4)
+        )
+        ttk.Combobox(
+            frame, textvariable=self.var_fiscal_start_month, width=12,
+            values=list(MONTH_NAMES.values()), state="readonly",
+        ).grid(row=1, column=1, sticky="w", pady=3)
+        help_icon(
+            frame,
+            "Måneden regnskabsåret starter i.\n\n"
+            "Med maj løber 2026/2027 fra 05-2026 til og med 04-2027.\n\n"
+            "Det er DENNE periode der afgør hvem der er en ny kunde — ikke "
+            "kolonnen 'Fiscal year' i Excel-filen. En kunde er 'Ny' hvis HELE "
+            "dens historik ligger inden for perioden.\n\n"
+            "Måneden bruges også når programmet selv foreslår et "
+            "ny-regnskabsår: i januar til april er man stadig i det år der "
+            "begyndte året før.",
+        ).grid(row=1, column=3, sticky="w", padx=(4, 0))
 
     def _build_filter_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "3  Frasortering")
@@ -865,6 +897,9 @@ class SegmenteringApp(tk.Tk):
         self.var_reference_date.set(cfg.reference_date)
         self.var_existing_months.set(cfg.existing_customer_months)
         self.var_new_fiscal_year.set(cfg.new_fiscal_year)
+        self.var_fiscal_start_month.set(
+            MONTH_NAMES.get(cfg.fiscal_year_start_month, MONTH_NAMES[5])
+        )
 
         self.var_excluded_groups.set(", ".join(cfg.excluded_customer_groups))
         self.var_excluded_turnover_types.set(", ".join(cfg.excluded_turnover_types))
@@ -926,6 +961,9 @@ class SegmenteringApp(tk.Tk):
             reference_date=self.var_reference_date.get().strip(),
             existing_customer_months=int(self.var_existing_months.get()),
             new_fiscal_year=self.var_new_fiscal_year.get().strip(),
+            fiscal_year_start_month=MONTH_NUMBERS.get(
+                self.var_fiscal_start_month.get(), FISCAL_YEAR_START_MONTH
+            ),
             excluded_customer_groups=split_list(self.var_excluded_groups.get()),
             excluded_turnover_types=split_list(self.var_excluded_turnover_types.get()),
             drop_zero_turnover=self.var_drop_zero.get(),
@@ -1125,4 +1163,13 @@ class SegmenteringApp(tk.Tk):
 
 
 def main() -> None:
+    """
+    Starter programmet bag kodeboksen.
+
+    Kodeboksen har sit eget vindue og kommer først; hovedvinduet bygges
+    først når koden er tastet rigtigt. Så kan der hverken nå at blinke en
+    brugerflade forbi eller opstå tvivl om hvad der må bruges.
+    """
+    if not ask_for_access_code():
+        return
     SegmenteringApp().mainloop()

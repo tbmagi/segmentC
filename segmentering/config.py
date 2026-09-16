@@ -61,16 +61,39 @@ def todays_reference_date(today: date | None = None) -> str:
     return f"{today.month:02d}-{today.year}"
 
 
-def todays_fiscal_year(today: date | None = None) -> str:
-    """
-    Regnskabsåret som ÅÅÅÅ/ÅÅÅÅ — indeværende år og året efter.
+#: Den måned regnskabsåret begynder i. 5 = maj, så 2026/2027 løber fra
+#: 05-2026 til og med 04-2027.
+FISCAL_YEAR_START_MONTH = 5
 
-    Er det 2026, bliver det "2026/2027". Formatet skal passe med det der står
-    i kolonnen 'Fiscal year' i salgsudtrækket; matcher det ikke, findes der
-    ingen nye kunder.
+
+def todays_fiscal_year(
+    today: date | None = None, start_month: int = FISCAL_YEAR_START_MONTH
+) -> str:
+    """
+    Det regnskabsår dagen ligger i, skrevet som ÅÅÅÅ/ÅÅÅÅ.
+
+    Regnskabsåret følger ikke kalenderåret: med start i maj hører januar til
+    april til det år der begyndte året før. Er det 10-02-2026, er man altså
+    stadig i 2025/2026 — ikke i 2026/2027. Regnes der forkert her, bliver
+    hele årets nye kunder klassificeret som noget andet.
     """
     today = today or date.today()
-    return f"{today.year}/{today.year + 1}"
+    start_year = today.year if today.month >= start_month else today.year - 1
+    return f"{start_year}/{start_year + 1}"
+
+
+def fiscal_year_start(label: str) -> int | None:
+    """
+    Startåret i en regnskabsårs-etiket. "2026/2027" og "2026/27" giver begge 2026.
+
+    Returnerer ``None`` hvis etiketten er tom eller ikke kan læses — så er der
+    ingen ny-periode, og ingen kunde kan blive "Ny".
+    """
+    text = str(label or "").strip()
+    if not text:
+        return None
+    head = text.split("/")[0].strip()
+    return int(head) if head.isdigit() and len(head) == 4 else None
 
 
 def dated_output_directory(today: date | None = None) -> str:
@@ -278,6 +301,8 @@ class Config:
     reference_date: str = field(default_factory=todays_reference_date)  # "MM-ÅÅÅÅ"
     existing_customer_months: int = 24
     new_fiscal_year: str = field(default_factory=todays_fiscal_year)
+    #: Måneden regnskabsåret begynder i. 5 = maj (2026/2027 = 05-2026…04-2027).
+    fiscal_year_start_month: int = FISCAL_YEAR_START_MONTH
 
     # Frasortering
     excluded_customer_groups: list[str] = field(default_factory=lambda: ["FJ"])
@@ -375,6 +400,16 @@ class Config:
             raise ValueError(
                 "'Eksisterende kunde vindue' kan ikke være negativt, fik: "
                 f"{self.existing_customer_months!r}"
+            )
+        if not 1 <= self.fiscal_year_start_month <= 12:
+            raise ValueError(
+                "Regnskabsårets startmåned skal være mellem 1 og 12, fik: "
+                f"{self.fiscal_year_start_month!r}"
+            )
+        if self.new_fiscal_year.strip() and fiscal_year_start(self.new_fiscal_year) is None:
+            raise ValueError(
+                "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅÅÅ, fx 2026/2027. "
+                f"Fik: {self.new_fiscal_year!r}"
             )
         if self.excel_detail not in ("fuld", "kompakt", "minimal"):
             raise ValueError(

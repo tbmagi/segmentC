@@ -26,9 +26,22 @@ def test_reference_date_follows_today():
     assert todays_reference_date(date(2026, 1, 3)) == "01-2026"
 
 
-def test_fiscal_year_is_this_year_and_the_next():
+def test_fiscal_year_is_the_one_the_day_falls_in():
+    """
+    Regnskabsåret begynder i maj, så januar til april hører til det år der
+    begyndte året før. Blev der regnet på kalenderåret, ville programmet i
+    de fire måneder foreslå det år der endnu ikke er begyndt — og så ville
+    ingen kunde overhovedet blive klassificeret som ny.
+    """
     assert todays_fiscal_year(date(2026, 9, 15)) == "2026/2027"
-    assert todays_fiscal_year(date(2029, 2, 1)) == "2029/2030"
+    assert todays_fiscal_year(date(2026, 5, 1)) == "2026/2027"   # første dag
+    assert todays_fiscal_year(date(2026, 4, 30)) == "2025/2026"  # sidste dag
+    assert todays_fiscal_year(date(2029, 2, 1)) == "2028/2029"
+
+
+def test_the_fiscal_year_start_month_can_be_moved():
+    """Begynder året i januar, følger det kalenderåret."""
+    assert todays_fiscal_year(date(2026, 2, 1), start_month=1) == "2026/2027"
 
 
 def test_the_fiscal_year_is_written_with_four_digits_on_both_sides():

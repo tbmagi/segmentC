@@ -520,6 +520,127 @@ def former_customers():
     return W, H, parts
 
 
+# --- Figur 5: kundetyper -----------------------------------------------------
+
+TYPE_COLOURS = {"Ny": "#2a78d6", "Eksisterende": "#1baf7a", "Tidligere": "#7c7a73"}
+
+
+def customer_types():
+    """
+    De fem scenarier på én tidslinje.
+
+    De to perioder — ny-regnskabsåret og eksisterende-vinduet — overlapper,
+    og det er dét overlap figuren skal gøre til at få øje på.
+    """
+    W, H = 1000, 616
+    left, right = 210, 786
+    scale = months(2022, 1, 64)  # 2022-01 til 2027-04
+    step = (right - left) / len(scale)
+
+    def x_of(label):
+        return left + scale.index(label) * step + step / 2
+
+    def span(start, stop):
+        return x_of(start) - step / 2, x_of(stop) + step / 2
+
+    rows = [
+        ("A", ["2026-05", "2026-09"], "Ny",
+         "al aktivitet i ny-regnskabsåret"),
+        ("B", ["2026-01", "2026-06"], "Eksisterende",
+         "handler også før ny-året"),
+        ("C", ["2023-01", "2026-06"], "Eksisterende",
+         "vendt tilbage efter pause"),
+        ("D", ["2023-12", "2025-12"], "Eksisterende",
+         "seneste handel er i vinduet"),
+        ("E", ["2022-01", "2023-03"], "Tidligere",
+         "intet i vinduet"),
+    ]
+
+    parts = [
+        text(28, 38, "De tre kundetyper", size=22, weight="bold"),
+        text(28, 64,
+             "Dags dato 09-2026 · eksisterende-vindue 24 måneder · "
+             "ny-regnskabsår 2026/2027 (maj–april)",
+             size=14.5, colour=INK_2),
+    ]
+
+    # Båndene får ingen overskrift ude ved sig selv — de to tekster ville
+    # lande oven i hinanden dér hvor perioderne overlapper, hvilket er lige
+    # præcis det sted figuren handler om. I stedet står de som en forklaring
+    # øverst, og båndene taler for sig selv nedenunder.
+    for index, (label, colour, fill) in enumerate([
+        ("Eksisterende-vindue: 09-2024 – 09-2026", "#12805a", "#d6ece3"),
+        ("Ny-regnskabsår: 05-2026 – 04-2027", KEEP, "#cfe3fa"),
+    ]):
+        x = 28 + index * 330
+        parts += [
+            rect(x, 92, 16, 16, fill, radius=3, stroke=colour, width=1.5),
+            text(x + 24, 105, label, size=13, colour=colour, weight="bold"),
+        ]
+    parts.append(
+        text(28, 132, "De to perioder overlapper i 05-2026 – 09-2026.",
+             size=12.5, colour=INK_2)
+    )
+
+    top = 176
+    row_h = 54
+    axis_y = top + len(rows) * row_h + 6
+
+    win_x0, win_x1 = span("2024-09", "2026-09")
+    new_x0, new_x1 = span("2026-05", "2027-04")
+    parts += [
+        rect(win_x0, top - 16, win_x1 - win_x0, axis_y - top + 16,
+             "#eef7f3", radius=4),
+        line(win_x0, top - 16, win_x0, axis_y + 4, "#1baf7a", 2.5),
+        rect(new_x0, top - 16, new_x1 - new_x0, axis_y - top + 16,
+             "#e8f1fd", radius=4, opacity=0.85),
+        line(new_x0, top - 16, new_x0, axis_y + 4, KEEP, 2.5),
+        line(new_x1, top - 16, new_x1, axis_y + 4, KEEP, 2.5, dash="5 4"),
+        # Vinduets højre kant ER dags dato — den fortjener sin egen streg.
+        line(win_x1, top - 16, win_x1, axis_y + 4, "#1baf7a", 2.5, dash="5 4"),
+        text(win_x1, top - 24, "dags dato", size=11.5, colour="#12805a",
+             weight="bold", anchor="middle"),
+    ]
+
+    for index, (name, activity, kind, why) in enumerate(rows):
+        y = top + index * row_h + row_h / 2
+        colour = TYPE_COLOURS[kind]
+        parts.append(text(28, y - 2, f"Kunde {name}", size=15, weight="bold"))
+        parts.append(text(28, y + 15, why, size=11.5, colour=INK_2))
+        for month in activity:
+            parts.append(circle(x_of(month), y, 8, colour, stroke=SURFACE, width=2))
+        # Den første mærkat vokser til venstre, den sidste til højre, så to
+        # handler tæt på hinanden ikke skriver oven i hinanden.
+        parts.append(month_label(x_of(activity[0]), y, activity[0], colour))
+        parts.append(
+            text(x_of(activity[-1]) + 12, y - 17, activity[-1], size=12,
+                 colour=colour, weight="bold")
+        )
+        parts += [
+            rect(806, y - 14, 156, 28, "#ffffff", radius=14,
+                 stroke=colour, width=1.5),
+            text(884, y + 5, kind, size=13, colour=colour, weight="bold",
+                 anchor="middle"),
+        ]
+
+    _month_axis(parts, scale, x_of, axis_y, left, right, ticks=("-01", "-07"))
+
+    parts.append(
+        text(28, axis_y + 62,
+             "Rækkefølgen afgør overlappet: ligger HELE historikken i "
+             "ny-regnskabsåret, er kunden ny. Ellers er det nok med én handel "
+             "i vinduet.",
+             size=13.5, colour=INK_2)
+    )
+    parts.append(
+        text(28, axis_y + 84,
+             "Måneder efter dags dato er budgettal og tæller ikke med — "
+             "i praksis er ny-året derfor 05-2026 til 09-2026.",
+             size=13.5, colour=INK_2)
+    )
+    return W, H, parts
+
+
 # --- Skrivning ---------------------------------------------------------------
 
 FIGURES = {
@@ -527,6 +648,7 @@ FIGURES = {
     "budgettal": budget_rows,
     "forankring": anchoring,
     "tidligere-kunder": former_customers,
+    "kundetyper": customer_types,
 }
 
 

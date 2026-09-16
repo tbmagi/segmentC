@@ -12,7 +12,7 @@ from segmentering.classify import (
     classify_item_no,
     has_manual_suffix,
 )
-from segmentering.config import Band, DEFAULT_CATEGORY_BANDS
+from segmentering.config import Band, Config, DEFAULT_CATEGORY_BANDS
 from segmentering.dataio import PERIOD, ReferenceDates, parse_period
 
 
@@ -56,45 +56,86 @@ def test_has_manual_suffix():
 # --- Kundetyper --------------------------------------------------------------
 
 
-def _group(months, fiscal_years=None):
-    frame = pd.DataFrame({PERIOD: [parse_period(m) for m in months]})
-    if fiscal_years is not None:
-        frame["Fiscal year"] = fiscal_years
-    return frame
+def _group(months):
+    return pd.DataFrame({PERIOD: [parse_period(m) for m in months]})
 
 
-DATES = ReferenceDates(today=parse_period("2026-05"), window_start=parse_period("2024-05"))
+#: Opsætningen fra de fem beskrevne scenarier: dags dato 09-2026, 24 måneders
+#: vindue (09-2024 – 09-2026) og regnskabsåret 2026/2027 (05-2026 – 04-2027).
+#: De to perioder overlapper med vilje fra 05-2026 og frem.
+DATES = ReferenceDates.from_config(
+    Config(reference_date="09-2026", new_fiscal_year="2026/2027",
+           existing_customer_months=24)
+)
+
+#: Uden ny-regnskabsår findes kategorien "Ny" ikke.
+NO_FISCAL_YEAR = ReferenceDates.from_config(
+    Config(reference_date="09-2026", new_fiscal_year="", existing_customer_months=24)
+)
 
 
-def test_new_customer_only_active_in_new_fiscal_year():
-    group = _group(["2026-06", "2026-07"], ["2026/27", "2026/27"])
-    assert classify_customer_type(group, DATES, "2026/27", "Fiscal year") == "Ny"
+def test_the_fiscal_year_runs_from_its_start_month():
+    """2026/2027 er 05-2026 til og med 04-2027 — ikke kalenderåret."""
+    assert (DATES.fiscal_start.month, DATES.fiscal_start.year) == (5, 2026)
+    assert (DATES.fiscal_end.month, DATES.fiscal_end.year) == (4, 2027)
 
 
-def test_revived_customer_counts_as_existing():
-    """Aktiv i ny-året, men med ældre historik – altså ikke en ny kunde."""
-    group = _group(["2020-01", "2026-06"], ["2019/20", "2026/27"])
-    assert classify_customer_type(group, DATES, "2026/27", "Fiscal year") == "Eksisterende"
+@pytest.mark.parametrize(
+    "name, months, expected",
+    [
+        # A: begge handler ligger i ny-regnskabsåret
+        ("A", ["2026-09", "2026-05"], "Ny"),
+        # B: én i ny-året, én før — altså ikke en ny kunde
+        ("B", ["2026-06", "2026-01"], "Eksisterende"),
+        # C: én i ny-året, én mange år tilbage. Kunden er vendt tilbage
+        ("C", ["2026-06", "2023-01"], "Eksisterende"),
+        # D: ingen aktivitet i ny-året, men én inden for vinduet
+        ("D", ["2025-12", "2023-12"], "Eksisterende"),
+        # E: al aktivitet ligger før vinduet
+        ("E", ["2023-03", "2022-01"], "Tidligere"),
+    ],
+)
+def test_the_five_customer_scenarios(name, months, expected):
+    assert classify_customer_type(_group(months), DATES) == expected, name
 
 
-def test_existing_customer_inside_window():
-    group = _group(["2025-03"])
-    assert classify_customer_type(group, DATES, "", None) == "Eksisterende"
+def test_new_requires_the_whole_history_inside_the_fiscal_year():
+    """
+    Perioderne overlapper, så det er ikke nok at den seneste handel ligger i
+    ny-året — så ville enhver tilbagevendt kunde blive talt som ny.
+    """
+    assert classify_customer_type(_group(["2026-06"]), DATES) == "Ny"
+    assert classify_customer_type(_group(["2026-06", "2026-04"]), DATES) == "Eksisterende"
 
 
-def test_former_customer_outside_all_windows():
-    group = _group(["2019-03"])
-    assert classify_customer_type(group, DATES, "", None) == "Tidligere"
+def test_the_month_the_fiscal_year_begins_counts_as_new():
+    assert classify_customer_type(_group(["2026-05"]), DATES) == "Ny"
+    assert classify_customer_type(_group(["2026-04"]), DATES) == "Eksisterende"
 
 
-def test_date_based_fallback_when_no_fiscal_year():
-    """Uden regnskabsår regnes aktivitet efter dags dato som en ny kunde."""
-    group = _group(["2026-09"])
-    assert classify_customer_type(group, DATES, "", None) == "Ny"
+def test_the_window_edges_are_inclusive():
+    assert classify_customer_type(_group(["2024-09"]), DATES) == "Eksisterende"
+    assert classify_customer_type(_group(["2024-08"]), DATES) == "Tidligere"
+
+
+def test_without_a_fiscal_year_nobody_is_new():
+    assert classify_customer_type(_group(["2026-06"]), NO_FISCAL_YEAR) == "Eksisterende"
+    assert classify_customer_type(_group(["2019-03"]), NO_FISCAL_YEAR) == "Tidligere"
+
+
+def test_the_fiscal_year_column_is_not_consulted():
+    """
+    Klassifikationen bygger på datoerne. Kolonnen kunne være skrevet
+    "2026/27" ét sted og "2026/2027" et andet, og en ny kunde faldt så
+    stiltiende ned i "Eksisterende".
+    """
+    group = _group(["2026-06"])
+    group["Fiscal year"] = ["noget helt andet"]
+    assert classify_customer_type(group, DATES) == "Ny"
 
 
 def test_group_without_dates_is_unknown():
-    assert classify_customer_type(_group([]), DATES, "", None) == "Ukendt"
+    assert classify_customer_type(_group([]), DATES) == "Ukendt"
 
 
 # --- Kundekategorier ---------------------------------------------------------

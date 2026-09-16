@@ -113,6 +113,41 @@ def test_printing_still_works_without_a_console(monkeypatch):
 
 
 @needs_tkinter
+@pytest.mark.parametrize(
+    "code, accepted",
+    [
+        ("fj1234", True),
+        ("FJ1234", True),      # store bogstaver må ikke spærre nogen ude
+        ("  fj1234  ", True),  # mellemrum fra en kopieret kode
+        ("fj123", False),
+        ("fj12345", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_the_access_code(code, accepted):
+    from gui.login import code_is_correct
+
+    assert code_is_correct(code) is accepted
+
+
+@needs_tkinter
+def test_the_access_code_is_not_stored_in_the_clear():
+    """
+    Koden ligger som et SHA-256 aftryk. Det gør den ikke hemmelig — den der
+    kan køre programmet kan prøve sig frem — men den falder ikke ud af filen
+    ved et simpelt opslag.
+    """
+    from pathlib import Path
+
+    from gui import login
+
+    source = Path(login.__file__).read_text(encoding="utf-8")
+    assert "fj1234" not in source
+    assert len(login.ACCESS_CODE_HASH) == 64
+
+
+@needs_tkinter
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])
 def test_an_existing_console_is_left_alone(monkeypatch, stream):
     import run_gui

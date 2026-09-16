@@ -87,7 +87,7 @@ def annotate(df: pd.DataFrame, cfg: Config, dates: ReferenceDates, log: Log) -> 
     annotated[ITEM_TYPE] = annotated[ITEM_NO].apply(classify_item_no)
     annotated[HAS_MANUAL_SUFFIX] = has_manual_suffix(annotated[ITEM_NO])
 
-    customer_types = customer_types_by_group(annotated, dates, cfg.new_fiscal_year)
+    customer_types = customer_types_by_group(annotated, dates)
     annotated[CUSTOMER_TYPE_GLOBAL] = annotated[GROUP].map(customer_types)
 
     # KAM opløses ÉN gang på hele datasættet og skrives tilbage i kolonnen.
@@ -230,7 +230,7 @@ def analyse_segment(
         log(f"[{segment.label}] Ingen items at beregne på – springes over.")
         return None
 
-    customer_types = customer_types_by_group(frame, dates, cfg.new_fiscal_year)
+    customer_types = customer_types_by_group(frame, dates)
 
     per_item_filtered: pd.DataFrame | None = None
     outliers: pd.DataFrame | None = None

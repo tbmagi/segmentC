@@ -346,6 +346,20 @@ add(
     "tager typisk 5–15 sekunder, fordi filen pakker sig selv ud. Der sker " +
       "ikke noget på skærmen imens. Bagefter går det hurtigt."
   ),
+  h2("Adgangskoden"),
+  p(
+    "Først kommer en lille boks der beder om en adgangskode. Tastes den " +
+      "rigtigt, åbner programmet; ellers lukker det efter tre forsøg. Koden " +
+      "får du af den der har givet dig programmet. Store og små bogstaver er " +
+      "uden betydning."
+  ),
+  note(
+    "Hvad koden er — og ikke er:",
+    "den holder programmet fra at blive åbnet af nogen der ikke skal bruge " +
+      "det. Den beskytter ikke data: selve Excel-filen og de mapper " +
+      "programmet skriver i er ikke låst, og den der kan køre programmet kan " +
+      "også prøve sig frem. Betragt den som en dørklokke, ikke som en lås."
+  ),
   p(
     "Læg filen et sted hvor der må skrives — skrivebordet eller et " +
       "fællesdrev. Programmet lægger nemlig sit resultat i en **dateret " +
@@ -544,28 +558,61 @@ add(
   p("Et suffix på varenummeret overruler reglen:"),
   code(["-S1  →  Sinter", "-S2  →  Støbe", "-S0  →  fjern fra segmenteringen"]),
   h2("Trin 3 — Kundetype"),
-  p("Hver kundegruppe bliver én af tre typer:"),
+  p(
+    "To perioder afgør det hele, og begge regnes ud fra **datoerne i data**. " +
+      "Kolonnen “Fiscal year” bruges ikke længere: den kunne være skrevet " +
+      "“2026/27” ét sted og “2026/2027” et andet, og så faldt en ny kunde " +
+      "stiltiende ned i “Eksisterende”."
+  ),
+  bullet(
+    "**Ny-regnskabsåret** løber fra sin startmåned og tolv måneder frem. " +
+      "Begynder året i maj, er 2026/2027 altså 05-2026 til og med 04-2027."
+  ),
+  bullet(
+    "**Eksisterende-vinduet** er N måneder bagud fra dags dato, typisk 24. " +
+      "Med dags dato 09-2026 er det 09-2024 til og med 09-2026."
+  ),
+  p(
+    "De to perioder **overlapper** — her fra 05-2026 og frem. Derfor afgøres " +
+      "typen i en fast rækkefølge:"
+  ),
   table(
     ["Type", "Betyder"],
     [
       [
-        "Eksisterende",
-        "Seneste aktivitet ligger inden for “Eksisterende kunde vindue” bagud fra dags dato — typisk 24 måneder.",
+        "Ny",
+        "HELE kundens historik ligger inden for ny-regnskabsåret. Det er ikke nok at den seneste handel gør det.",
       ],
       [
-        "Ny",
-        "Aktivitet kun i det angivne ny-regnskabsår, og ingen tidligere historik.",
+        "Eksisterende",
+        "Ikke ny, men mindst én handel ligger inden for eksisterende-vinduet.",
       ],
-      ["Tidligere", "Al aktivitet ligger uden for begge ovenstående vinduer."],
+      ["Tidligere", "Al aktivitet ligger før vinduet."],
     ],
     [22, 78]
   ),
-  spacer(160),
+  ...figure(
+    "kundetyper", 1000, 616,
+    "Figur 4 — De fem tilfælde. De to perioder overlapper, og rækkefølgen af " +
+      "reglerne afgør hvad der sker i overlappet."
+  ),
+  p(
+    "Kunde C er værd at hæfte sig ved. Den handlede i 2023 og igen i 2026, " +
+      "altså med tre års pause. Den er **ikke** ny — en kunde man har handlet " +
+      "med før er ikke en ny kunde, den er vendt tilbage — og den er heller " +
+      "ikke tidligere, for den handler jo igen. Den er eksisterende."
+  ),
+  note(
+    "I praksis:",
+    "måneder efter dags dato er budgettal og sorteres fra i trin 1. Den del " +
+      "af ny-regnskabsåret der ligger ude i fremtiden kan derfor ikke gøre " +
+      "nogen til en ny kunde — reelt er ny-året 05-2026 til 09-2026."
+  ),
   note(
     "Pas på formatet:",
-    "ny-regnskabsåret skrives ÅÅÅÅ/ÅÅÅÅ, fx 2026/2027, og skal stemme " +
-      "nøjagtigt overens med det der står i kolonnen “Fiscal year”. Gør det " +
-      "ikke det, findes der ingen nye kunder overhovedet."
+    "ny-regnskabsåret skrives ÅÅÅÅ/ÅÅÅÅ, fx 2026/2027. Hvilken måned året " +
+      "begynder i sættes under Indstillinger → Kundetyper; som udgangspunkt " +
+      "er det maj."
   ),
   h2("Trin 4 — Gross Margin % pr. vare"),
   p(
@@ -594,7 +641,7 @@ add(
   ),
   ...figure(
     "forankring", 1000, 502,
-    "Figur 4 — Samme to varer, samme data. Forankringen afgør hvilken " +
+    "Figur 5 — Samme to varer, samme data. Forankringen afgør hvilken " +
       "periode hver vare måles over."
   ),
   h2("Trin 6 — Outlier-filter"),
@@ -721,6 +768,13 @@ add(
     "Baggrundsfarverne er zoner, ikke data. De viser hvor grænserne mellem " +
       "kategorierne går, så det kan ses om en kunde ligger lige på vippen."
   ),
+  p(
+    "Over kundegruppe-grafen står en lille **farvekode**, der siger hvilken " +
+      "farve der hører til hvilken kundetype. Den ligger uden for selve " +
+      "grafen, så den hverken stjæler plads fra punkterne eller kan slås fra " +
+      "ved et uheld. Farvelægges der efter Industry segment i stedet, viser " +
+      "farvekoden brancherne."
+  ),
   note(
     "Graferne virker uden internet.",
     "Hele tegnebiblioteket ligger inde i HTML-filen. Derfor fylder hver fil " +
@@ -749,6 +803,30 @@ add(
     [26, 26, 48]
   ),
   spacer(200),
+  h2("Farverne på knapperne"),
+  p(
+    "En knap er **grøn når den er tændt** og **rød når den er slukket**, så " +
+      "det kan ses på afstand hvad der er slået fra."
+  ),
+  bullet(
+    "**Filterknapper** (kundetype, kategori, KAM): grøn betyder at værdien " +
+      "vises, rød at den er skjult. Alle starter grønne."
+  ),
+  bullet(
+    "**Volumenkrav** har omvendt fortegn, fordi det er et enten-eller-valg: " +
+      "den valgte er grøn, de fravalgte røde."
+  ),
+  bullet(
+    "**Fremhæv branche** bliver hverken grøn eller rød. De knapper skjuler " +
+      "ingenting — de gør kun én branche tykkere i kanten — og rød ville " +
+      "påstå at noget var slået fra."
+  ),
+  p(
+    "De to nuancer er valgt så de også er forskellige i lyshed: den røde er " +
+      "mærkbart mørkere end den grønne. Er man rødgrønt farveblind, kan " +
+      "tilstanden derfor stadig aflæses.",
+    { italics: true, color: GREY }
+  ),
   h2("Hvad “filtre der begrænser hinanden” betyder"),
   p(
     "Forestil dig at du har slået alt fra på nær én KAM. Hvis du så slukker " +

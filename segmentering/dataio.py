@@ -16,7 +16,7 @@ from typing import Callable, Iterable
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from .config import Config
+from .config import Config, fiscal_year_start
 
 Log = Callable[[str], None]
 
@@ -103,17 +103,39 @@ def parse_period(value: object) -> pd.Timestamp:
 
 @dataclass(frozen=True)
 class ReferenceDates:
-    """De to datoer der afgrænser 'eksisterende kunde'-vinduet."""
+    """
+    De datoer kundetyperne afgøres af.
+
+    ``window_start``–``today`` er 'eksisterende kunde'-vinduet.
+    ``fiscal_start``–``fiscal_end`` er ny-regnskabsåret, udledt af dets
+    startmåned: med start i maj løber 2026/2027 fra 05-2026 til 04-2027.
+    De to perioder overlapper med vilje — en kunde kan ligge i begge, og
+    rækkefølgen af reglerne i :func:`classify_customer_type` afgør udfaldet.
+
+    ``fiscal_start`` er ``None`` hvis der ikke er sat et ny-regnskabsår; så
+    findes kategorien "Ny" ikke.
+    """
 
     today: pd.Timestamp
     window_start: pd.Timestamp
+    fiscal_start: pd.Timestamp | None = None
+    fiscal_end: pd.Timestamp | None = None
 
     @classmethod
     def from_config(cls, cfg: Config) -> "ReferenceDates":
         today = parse_month(cfg.reference_date)
+        start_year = fiscal_year_start(cfg.new_fiscal_year)
+        fiscal_start = fiscal_end = None
+        if start_year is not None:
+            fiscal_start = pd.Timestamp(
+                year=start_year, month=cfg.fiscal_year_start_month, day=1
+            )
+            fiscal_end = fiscal_start + relativedelta(months=11)
         return cls(
             today=today,
             window_start=today - relativedelta(months=cfg.existing_customer_months),
+            fiscal_start=fiscal_start,
+            fiscal_end=fiscal_end,
         )
 
 

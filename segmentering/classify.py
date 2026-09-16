@@ -12,7 +12,7 @@ from typing import Mapping
 import pandas as pd
 
 from .config import Band
-from .dataio import FISCAL_YEAR, GROUP, PERIOD, ReferenceDates, find_column
+from .dataio import GROUP, PERIOD, ReferenceDates
 
 # Item-typer
 SINTER = "sintere"
@@ -69,62 +69,51 @@ def has_manual_suffix(series: pd.Series) -> pd.Series:
     return upper.str.endswith(tuple(MANUAL_SUFFIXES))
 
 
-def classify_customer_type(
-    group_df: pd.DataFrame,
-    dates: ReferenceDates,
-    new_fiscal_year: str | None = None,
-    fiscal_year_column: str | None = None,
-) -> str:
+def classify_customer_type(group_df: pd.DataFrame, dates: ReferenceDates) -> str:
     """
-    Klassificerer én kundegruppe ud fra dens samlede historik.
+    Klassificerer én kundegruppe ud fra hvornår den har handlet.
+
+    Alt afgøres af datoerne i data — ikke af kolonnen 'Fiscal year'. Den
+    kolonne kunne være skrevet "2026/27" ét sted og "2026/2027" et andet, og
+    så faldt en ny kunde stiltiende ned i "Eksisterende". Ny-regnskabsåret
+    udledes nu af sin startmåned: 2026/2027 er 05-2026 til og med 04-2027.
 
     Reglerne evalueres i denne rækkefølge:
 
-    1. Har kunden aktivitet i ``new_fiscal_year`` og ingen anden historik
-       -> "Ny".
-    2. Har kunden aktivitet i vinduet [window_start ; today], eller er den
-       aktiv i ny-året men har også ældre historik (genoplivet kunde)
-       -> "Eksisterende".
-    3. Er der intet ny-regnskabsår sat, og ligger mindst én række efter
-       'dags dato' -> "Ny" (dato-baseret fallback).
-    4. Ellers -> "Tidligere".
+    1. Ligger **al** aktivitet inden for ny-regnskabsåret -> "Ny".
+       Det er hele historikken der skal ligge der, ikke bare den seneste
+       handel; en kunde der også har handlet før, er ikke ny.
+    2. Ligger **mindst én** aktivitet i vinduet [window_start ; today]
+       -> "Eksisterende". Her havner både den kunde der handler løbende, og
+       den der vender tilbage efter flere års pause.
+    3. Ellers -> "Tidligere".
+
+    De to perioder overlapper: med 24 måneders vindue og et regnskabsår der
+    begyndte for fire måneder siden, ligger ny-årets måneder også i vinduet.
+    Rækkefølgen afgør det — regel 1 kommer først, så en kunde hvis historik
+    ligger helt inden for ny-året bliver "Ny" og ikke "Eksisterende".
     """
     periods = group_df[PERIOD].dropna()
     if periods.empty:
         return "Ukendt"
 
-    active_in_new_year = False
-    active_in_other_year = False
-    if new_fiscal_year and fiscal_year_column and fiscal_year_column in group_df.columns:
-        target = str(new_fiscal_year).strip().lower()
-        values = (
-            group_df[fiscal_year_column].dropna().astype(str).str.strip().str.lower()
-        )
-        active_in_new_year = bool((values == target).any())
-        active_in_other_year = bool((values != target).any())
-
-        if active_in_new_year and not active_in_other_year:
+    if dates.fiscal_start is not None:
+        in_fiscal_year = (periods >= dates.fiscal_start) & (periods <= dates.fiscal_end)
+        if in_fiscal_year.all():
             return "Ny"
 
-    in_window = ((periods >= dates.window_start) & (periods <= dates.today)).any()
-    if in_window or (active_in_new_year and active_in_other_year):
+    if ((periods >= dates.window_start) & (periods <= dates.today)).any():
         return "Eksisterende"
-
-    if not new_fiscal_year and (periods > dates.today).any():
-        return "Ny"
 
     return "Tidligere"
 
 
 def customer_types_by_group(
-    df: pd.DataFrame,
-    dates: ReferenceDates,
-    new_fiscal_year: str | None,
+    df: pd.DataFrame, dates: ReferenceDates
 ) -> dict[str, str]:
     """Klassificerer hver kundegruppe i ``df`` og returnerer et opslag."""
-    fiscal_column = find_column(df, FISCAL_YEAR)
     return {
-        group: classify_customer_type(group_df, dates, new_fiscal_year, fiscal_column)
+        group: classify_customer_type(group_df, dates)
         for group, group_df in df.groupby(GROUP)
     }
 
