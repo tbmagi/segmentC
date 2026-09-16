@@ -79,7 +79,18 @@ def todays_fiscal_year(
     """
     today = today or date.today()
     start_year = today.year if today.month >= start_month else today.year - 1
-    return f"{start_year}/{start_year + 1}"
+    return format_fiscal_year(start_year)
+
+
+def format_fiscal_year(start_year: int) -> str:
+    """
+    Skriver et regnskabsår som ÅÅÅÅ/ÅÅ — samme form som salgsudtrækket bruger.
+
+    Formatet er kun til at se på: klassifikationen regner på datoer, ikke på
+    teksten. Men står der noget andet på skærmen end i Excel-filen, sætter
+    det folk i tvivl om de har skrevet det rigtige.
+    """
+    return f"{start_year}/{(start_year + 1) % 100:02d}"
 
 
 def fiscal_year_start(label: str) -> int | None:
@@ -87,7 +98,7 @@ def fiscal_year_start(label: str) -> int | None:
     Startåret i en regnskabsårs-etiket. "2026/2027" og "2026/27" giver begge 2026.
 
     Returnerer ``None`` hvis etiketten er tom eller ikke kan læses — så er der
-    ingen ny-periode, og ingen kunde kan blive "Ny".
+    ingen ny-periode, og ingen kunde kan blive "Ny" eller "Genopstået".
     """
     text = str(label or "").strip()
     if not text:
@@ -219,6 +230,9 @@ CUSTOMER_TYPE_COLOURS = {
     "Eksisterende": "#2ca02c",
     "Tidligere": "#ff7f0e",
     "Ny": "#1f77b4",
+    # Brun er valgt fordi den kan skelnes fra alle tre øvrige, også for en
+    # farveblind (værste par 12,0 deutan mod den grønne).
+    "Genopstået": "#8c564b",
 }
 
 
@@ -408,7 +422,7 @@ class Config:
             )
         if self.new_fiscal_year.strip() and fiscal_year_start(self.new_fiscal_year) is None:
             raise ValueError(
-                "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅÅÅ, fx 2026/2027. "
+                "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅ, fx 2026/27. "
                 f"Fik: {self.new_fiscal_year!r}"
             )
         if self.excel_detail not in ("fuld", "kompakt", "minimal"):

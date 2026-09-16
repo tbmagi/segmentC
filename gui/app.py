@@ -63,8 +63,6 @@ MONTH_NAMES = {
 }
 MONTH_NUMBERS = {name: number for number, name in MONTH_NAMES.items()}
 
-#: Hele udskriften fra en kørsel lægges her, ved siden af resultatet.
-LOG_FILENAME = "analyse-log.txt"
 
 
 def format_band(band: Band) -> str:
@@ -102,17 +100,14 @@ def describe_failure(exc: BaseException) -> str:
 
     Fejl vi selv rejser undervejs — manglende kolonner, en fil der ikke kan
     åbnes, en ugyldig indstilling — er allerede formuleret på dansk og vises
-    som de er. Alt andet er en programfejl, og der henvises til loggen, hvor
-    hele udskriften står.
+    som de er. Alt andet er en programfejl, og så vises typen og beskeden, så
+    der er noget at give videre.
     """
     if isinstance(exc, (ValueError, FileNotFoundError, PermissionError, KeyError)):
         message = str(exc).strip()
         if message:
             return message
-    return (
-        f"Der opstod en uventet fejl: {type(exc).__name__}.\n\n"
-        "Hele fejlbeskeden står i logfilen ved siden af resultatet."
-    )
+    return f"Der opstod en uventet fejl: {type(exc).__name__}: {exc}"
 
 
 class SegmenteringApp(tk.Tk):
@@ -132,7 +127,6 @@ class SegmenteringApp(tk.Tk):
         # Beskeder fra beregningstråden til hovedtråden.
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._settings_window: tk.Toplevel | None = None
-        self._log_lines: list[str] = []
         self._last_output_dir: str = ""
 
         self._configure_style()
@@ -270,7 +264,7 @@ class SegmenteringApp(tk.Tk):
         ttk.Entry(frame, textvariable=self.var_new_fiscal_year, width=12).grid(
             row=3, column=1, sticky="w", pady=4
         )
-        ttk.Label(frame, text="fx 2026/2027", foreground=HINT_COLOUR).grid(
+        ttk.Label(frame, text="fx 2026/27", foreground=HINT_COLOUR).grid(
             row=3, column=2, sticky="w", padx=6
         )
         help_icon(
@@ -1063,7 +1057,6 @@ class SegmenteringApp(tk.Tk):
 
         self.run_button.configure(state="disabled")
         self.status_label.configure(text="⏳  Analysen kører…")
-        self._log_lines = []
         self._last_output_dir = cfg.paths.directory
         self._start_progress()
         self.log(f"Starter analyse: {cfg.input_path}")
@@ -1082,7 +1075,7 @@ class SegmenteringApp(tk.Tk):
         try:
             run_analysis(cfg, log=self.log)
         except Exception as exc:
-            self.log(traceback.format_exc())
+            traceback.print_exc()
             self._events.put(("done", describe_failure(exc)))
         else:
             self._events.put(("done", None))
@@ -1115,7 +1108,6 @@ class SegmenteringApp(tk.Tk):
     def _finish(self, error: str | None) -> None:
         self.run_button.configure(state="normal")
         self._stop_progress()
-        log_file = self._write_log_file(self._last_output_dir)
 
         if error is None:
             self.status_label.configure(text="✅  Analysen er færdig")
@@ -1125,8 +1117,6 @@ class SegmenteringApp(tk.Tk):
             return
 
         self.status_label.configure(text="❌  Analysen fejlede")
-        if log_file:
-            error = f"{error}\n\nHele udskriften står i:\n{log_file}"
         messagebox.showerror("Analysen kunne ikke gennemføres", error)
 
     # -- Log ------------------------------------------------------------------
@@ -1135,11 +1125,9 @@ class SegmenteringApp(tk.Tk):
         """
         Modtager en linje fra beregningen. Må kaldes fra enhver tråd.
 
-        Linjerne vises ikke længere i vinduet, men samles op og skrives til en
-        logfil ved siden af resultatet — så der stadig er noget at kigge i hvis
-        noget går galt. Køen bruges fordi Tk kun må betjenes fra hovedtråden.
+        Linjen bruges kun som fremdriftstekst i vinduet; der skrives ingen
+        logfil. Køen bruges fordi Tk kun må betjenes fra hovedtråden.
         """
-        self._log_lines.append(str(message))
         self._events.put(("log", message))
 
     def _append_log(self, message: str) -> None:
@@ -1148,18 +1136,6 @@ class SegmenteringApp(tk.Tk):
         if line and line[0]:
             self.step_label.configure(text=line[0][:110])
 
-    def _write_log_file(self, directory: str) -> str | None:
-        """Lægger hele udskriften i en fil ved siden af resultatet."""
-        if not self._log_lines:
-            return None
-        target = os.path.join(directory, LOG_FILENAME)
-        try:
-            os.makedirs(directory, exist_ok=True)
-            with open(target, "w", encoding="utf-8") as handle:
-                handle.write("\n".join(self._log_lines))
-        except OSError:
-            return None
-        return target
 
 
 def main() -> None:

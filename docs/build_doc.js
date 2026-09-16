@@ -371,7 +371,6 @@ add(
     "    kunde_segmentering_kundegruppe.html",
     "    kunde_segmentering_item.html",
     "    kunde_segmentering.xlsx",
-    "    analyse-log.txt",
   ]),
   p(
     "Ligger programmet i en mappe der er skrivebeskyttet — for eksempel " +
@@ -566,7 +565,7 @@ add(
   ),
   bullet(
     "**Ny-regnskabsåret** løber fra sin startmåned og tolv måneder frem. " +
-      "Begynder året i maj, er 2026/2027 altså 05-2026 til og med 04-2027."
+      "Begynder året i maj, er 2026/27 altså 05-2026 til og med 04-2027."
   ),
   bullet(
     "**Eksisterende-vinduet** er N måneder bagud fra dags dato, typisk 24. " +
@@ -584,23 +583,34 @@ add(
         "HELE kundens historik ligger inden for ny-regnskabsåret. Det er ikke nok at den seneste handel gør det.",
       ],
       [
+        "Genopstået",
+        "Handler i ny-året, men har ikke handlet i vinduet i tiden op til året begyndte. Kunden har ligget stille og er tilbage.",
+      ],
+      [
         "Eksisterende",
-        "Ikke ny, men mindst én handel ligger inden for eksisterende-vinduet.",
+        "Ikke ny eller genopstået, men mindst én handel ligger inden for eksisterende-vinduet.",
       ],
       ["Tidligere", "Al aktivitet ligger før vinduet."],
     ],
     [22, 78]
   ),
   ...figure(
-    "kundetyper", 1000, 616,
+    "kundetyper", 1000, 640,
     "Figur 4 — De fem tilfælde. De to perioder overlapper, og rækkefølgen af " +
       "reglerne afgør hvad der sker i overlappet."
   ),
   p(
-    "Kunde C er værd at hæfte sig ved. Den handlede i 2023 og igen i 2026, " +
-      "altså med tre års pause. Den er **ikke** ny — en kunde man har handlet " +
-      "med før er ikke en ny kunde, den er vendt tilbage — og den er heller " +
-      "ikke tidligere, for den handler jo igen. Den er eksisterende."
+    "Kunde C er den genopståede. Den handlede i 2023 og igen i 2026, altså " +
+      "med tre års pause. Den er **ikke** ny — en kunde man har handlet med " +
+      "før er ikke en ny kunde — og den er heller ikke tidligere, for den " +
+      "handler jo igen."
+  ),
+  p(
+    "Forskellen på **Genopstået** og **Eksisterende** er hullet. To kunder " +
+      "kan begge have handlet i sidste måned og begge have gammel historik; " +
+      "den ene har handlet støt hele vejen, den anden har ikke rørt os i " +
+      "årevis. Det er to forskellige situationer for en sælger, og de har " +
+      "derfor hver sin farve på kundegruppe-grafen."
   ),
   note(
     "I praksis:",
@@ -762,18 +772,19 @@ add(
   p(
     "På begge grafer står punkterne i legenden til højre, grupperet efter " +
       "kundekategori — A+, A-, B+ og så videre. Et klik på et navn slår det " +
-      "enkelte punkt fra. Et dobbeltklik viser kun det ene."
+      "enkelte punkt fra. Et **dobbeltklik** viser kun den ene kunde og " +
+      "skjuler alle andre; dobbeltklik igen bringer resten tilbage."
   ),
   p(
     "Baggrundsfarverne er zoner, ikke data. De viser hvor grænserne mellem " +
       "kategorierne går, så det kan ses om en kunde ligger lige på vippen."
   ),
   p(
-    "Over kundegruppe-grafen står en lille **farvekode**, der siger hvilken " +
-      "farve der hører til hvilken kundetype. Den ligger uden for selve " +
-      "grafen, så den hverken stjæler plads fra punkterne eller kan slås fra " +
-      "ved et uheld. Farvelægges der efter Industry segment i stedet, viser " +
-      "farvekoden brancherne."
+    "Øverst til venstre over kundegruppe-grafen står en lille **farvekode**, " +
+      "der siger hvilken farve der hører til hvilken kundetype. Den ligger " +
+      "uden for selve grafen, så den hverken stjæler plads fra punkterne " +
+      "eller kan slås fra ved et uheld. Farvelægges der efter Industry " +
+      "segment i stedet, viser farvekoden brancherne."
   ),
   note(
     "Graferne virker uden internet.",
@@ -888,8 +899,8 @@ add(
       "altid ses hvornår et tal blev lavet."
   ),
   p(
-    "I mappen ligger også **analyse-log.txt** med hele udskriften fra " +
-      "kørslen. Den er der til at slå op i når noget ser forkert ud."
+    "Går noget galt undervejs, stopper programmet og viser fejlen i en boks. " +
+      "Der skrives ingen logfil."
   )
 );
 
@@ -996,9 +1007,9 @@ add(
   ),
   spacer(200),
   p(
-    "Uanset hvad står hele udskriften fra kørslen i **analyse-log.txt** i " +
-      "mappen med resultatet. Den er det første sted at kigge — og det der " +
-      "skal sendes med videre hvis nogen skal hjælpe."
+    "Fejlbeskeden vises i en boks når analysen stopper. Den er det første " +
+      "sted at kigge — og det der skal sendes med videre hvis nogen skal " +
+      "hjælpe."
   )
 );
 

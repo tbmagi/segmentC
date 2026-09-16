@@ -51,7 +51,7 @@ EDGE_WIDTH_HIGHLIGHT = 4.0
 EDGE_WIDTH_PLAIN = 0.5
 EDGE_COLOUR_PLAIN = "#333333"
 
-CUSTOMER_TYPE_ORDER = ["Eksisterende", "Ny", "Tidligere"]
+CUSTOMER_TYPE_ORDER = ["Eksisterende", "Ny", "Genopstået", "Tidligere"]
 
 GRID_COLOUR = "rgba(200,200,200,0.4)"
 PLOT_WIDTH = 1200
@@ -60,15 +60,21 @@ PLOT_HEIGHT = 750
 # Knaprækker under plottet. Bredden af en knap kendes først når browseren har
 # tegnet den, så den anslås ud fra etikettens længde — bevidst en anelse for
 # rundhåndet, så knapper hellere står lidt spredt end oven i hinanden.
-BUTTON_CHAR_PX = 6.5
-BUTTON_PADDING_PX = 34
+BUTTON_CHAR_PX = 6.0
+BUTTON_PADDING_PX = 32
 BUTTON_SPACING_PX = 14
+#: Rækkeoverskrifterne står med en mindre skrift end knapperne.
+HEADING_CHAR_PX = 4.4
+HEADING_GAP_PX = 16
 # Knappernes x-koordinat er i "paper"-enheder, der spænder over PLOTOMRÅDET —
-# ikke hele figuren. Området er smallere end figuren og skrumper yderligere
-# når legenden er bred (item-plottet viser kundenavne). Bredden kendes først
-# ved tegning, så her regnes med et bevidst lavt skøn: så bliver knapperne
-# hellere spredt for godt ud og ombrudt for tidligt end lagt oven i hinanden.
-BUTTON_AREA_PX = 640
+# ikke hele figuren. Bredden kendes først ved tegning, men er målt i browseren
+# til 730-750 px for begge plots med legenden ved siden af. Tallene ovenfor er
+# ligeledes målt: en knap med to tegn fylder 40 px, med tre 50 og med seks 60.
+#
+# Skønnet var før 640, og det var netop dét der ombrød rækkerne for tidligt:
+# hver knap blev regnet 15 % bredere end den er, så den sidste KAM faldt ned
+# på en linje for sig selv selv om der var plads.
+BUTTON_AREA_PX = 740
 
 # Lodret er det samme problem, bare værre: paper-enheden spænder over
 # plotområdets HØJDE, og den højde skrumpede før med hver knaprække, fordi
@@ -339,7 +345,10 @@ def _row_label(text: str, y: float) -> dict:
 
 
 def _label_width(text: str) -> float:
-    return (len(text) * BUTTON_CHAR_PX + 16) / BUTTON_AREA_PX
+    """Pladsen en rækkeoverskrift optager, i paper-koordinater."""
+    if not text:
+        return 0.0
+    return (len(text) * HEADING_CHAR_PX + HEADING_GAP_PX) / BUTTON_AREA_PX
 
 
 def toggle_buttons(
@@ -478,6 +487,37 @@ _FILTER_SCRIPT = """
     setTimeout(apply, 0);
   });
 
+  // Dobbeltklik i legenden skal vise den ENE kunde og skjule alle andre.
+  //
+  // Plotlys egen "toggleothers" gør det kun inden for kundens egen
+  // kategori-blok, fordi sporene er grupperet i legenden — dobbeltklikkede
+  // man på en A+-kunde, blev resten af A+ skjult, mens B+ og C+ blev stående.
+  // Derfor overtages dobbeltklikket her, og Plotlys eget afbrydes ved at
+  // returnere false.
+  //
+  // Om vi allerede står isoleret læses af sporene selv. Et flag dur ikke:
+  // Plotly sender ET klik af sted inden dobbeltklikket, så et flag ville
+  // være nulstillet inden det blev læst, og andet dobbeltklik ville isolere
+  // forfra i stedet for at fortryde.
+  function showsOnly(index) {
+    return gd.data.every(function (trace, i) {
+      var visible = (trace.visible === undefined) ? true : trace.visible;
+      return i === index ? visible === true : visible === 'legendonly';
+    });
+  }
+
+  gd.on('plotly_legenddoubleclick', function (event) {
+    var index = event.curveNumber;
+    if (showsOnly(index)) {
+      setTimeout(apply, 0);               // andet dobbeltklik fortryder
+    } else {
+      Plotly.restyle(gd, {visible: gd.data.map(function (_, i) {
+        return i === index ? true : 'legendonly';
+      })});
+    }
+    return false;
+  });
+
   Plotly.relayout(gd, colours());         // sæt farverne inden første klik
 })();
 """
@@ -500,7 +540,7 @@ _COLOUR_KEY_SCRIPT = """
   box.id = id;
   box.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:18px;'
     + 'font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
-    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 auto 4px auto;'
+    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 0 4px 0;'
     + 'border:1px solid #d8d6d0;border-radius:6px;background:#fbfbfa;'
     + 'width:max-content;max-width:100%;';
 
@@ -567,7 +607,9 @@ def filter_script(fig: "go.Figure") -> str | None:
 
 
 def stack_button_rows(
-    groups: Sequence[tuple[str, str | None, list[dict]]], y_start: float
+    groups: Sequence[tuple[str, str | None, list[dict]]],
+    y_start: float,
+    x_offset: float | None = None,
 ) -> tuple[list[dict], list[dict], int, list[str | None]]:
     """
     Lægger flere navngivne knapgrupper under hinanden.
@@ -585,13 +627,20 @@ def stack_button_rows(
     dimensions: list[str | None] = []
     y = y_start
     total_rows = 0
+    # Alle rækker begynder samme sted — ved den bredeste overskrift. Ellers
+    # rykkede hver række sit eget stykke ind, alt efter hvor lang dens
+    # overskrift var, og knapperne stod trappeformet.
+    offset = x_offset if x_offset is not None else max(
+        (_label_width(label) for label, _, buttons in groups if buttons),
+        default=0.0,
+    )
     for label, dimension, buttons in groups:
         if not buttons:
             continue
         row_menus, rows = flow_button_menus(
             buttons,
             y_start=y,
-            x_offset=_label_width(label) if label else 0.0,
+            x_offset=offset,
             style=row_colours(dimension),
         )
         menus.extend(row_menus)
@@ -1129,21 +1178,7 @@ def item_scatter(
     # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
     # så KAM — og nederst nulstil-knappen.
     level_label = "Volumenkrav:"
-    level_offset = _label_width(level_label)
     level_names = [f"Krav {level}" for level in levels]
-
-    # Hvor mange rækker kravknapperne fylder afhænger kun af deres bredde, så
-    # det kan tælles før de bygges færdige — og resten kan lægges nedenunder.
-    level_rows = (
-        flow_button_menus(
-            [dict(label=name) for name in level_names],
-            y_start=BUTTON_FIRST_ROW_Y,
-            x_offset=level_offset,
-        )[1]
-        if level_names
-        else 0
-    )
-    below_levels = BUTTON_FIRST_ROW_Y - max(level_rows, 1) * BUTTON_ROW_GAP
 
     button_groups: list[tuple[str, str | None, list[dict]]] = [
         ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
@@ -1154,8 +1189,28 @@ def item_scatter(
         )
     button_groups.append(("", RESET_DIMENSION, [reset_button()]))
 
+    # Alle rækker — også kravrækken — begynder ved den bredeste overskrift, så
+    # knapperne står på linje i stedet for trappeformet.
+    offset = max(
+        [_label_width(level_label)]
+        + [_label_width(label) for label, _, buttons in button_groups if buttons]
+    )
+
+    # Hvor mange rækker kravknapperne fylder afhænger kun af deres bredde, så
+    # det kan tælles før de bygges færdige — og resten kan lægges nedenunder.
+    level_rows = (
+        flow_button_menus(
+            [dict(label=name) for name in level_names],
+            y_start=BUTTON_FIRST_ROW_Y,
+            x_offset=offset,
+        )[1]
+        if level_names
+        else 0
+    )
+    below_levels = BUTTON_FIRST_ROW_Y - max(level_rows, 1) * BUTTON_ROW_GAP
+
     menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(
-        button_groups, below_levels
+        button_groups, below_levels, x_offset=offset
     )
 
     # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
@@ -1184,7 +1239,7 @@ def item_scatter(
     menus: list[dict] = []
     if level_buttons:
         menus, _ = flow_button_menus(
-            level_buttons, y_start=BUTTON_FIRST_ROW_Y, x_offset=level_offset
+            level_buttons, y_start=BUTTON_FIRST_ROW_Y, x_offset=offset
         )
         for menu, level in zip(menus, levels):
             menu.update(level_colours(level == default_level))

@@ -83,26 +83,41 @@ def classify_customer_type(group_df: pd.DataFrame, dates: ReferenceDates) -> str
     1. Ligger **al** aktivitet inden for ny-regnskabsåret -> "Ny".
        Det er hele historikken der skal ligge der, ikke bare den seneste
        handel; en kunde der også har handlet før, er ikke ny.
-    2. Ligger **mindst én** aktivitet i vinduet [window_start ; today]
-       -> "Eksisterende". Her havner både den kunde der handler løbende, og
-       den der vender tilbage efter flere års pause.
-    3. Ellers -> "Tidligere".
+    2. Er kunden i gang i ny-regnskabsåret, men har den ikke handlet i
+       vinduet i tiden op til året begyndte -> "Genopstået". Det er kunden
+       der har ligget stille længe og nu er tilbage.
+    3. Ligger **mindst én** aktivitet i vinduet [window_start ; today]
+       -> "Eksisterende". Den kunde der handler løbende.
+    4. Ellers -> "Tidligere".
 
     De to perioder overlapper: med 24 måneders vindue og et regnskabsår der
     begyndte for fire måneder siden, ligger ny-årets måneder også i vinduet.
     Rækkefølgen afgør det — regel 1 kommer først, så en kunde hvis historik
     ligger helt inden for ny-året bliver "Ny" og ikke "Eksisterende".
+
+    Forskellen på 2 og 3 er hullet. To kunder kan begge have handlet i sidste
+    måned og begge have gammel historik; den ene har handlet støt hele vejen
+    (eksisterende), den anden har ikke rørt os i årevis (genopstået). Det er
+    to forskellige salgssituationer, og de skal kunne skelnes på plottet.
     """
     periods = group_df[PERIOD].dropna()
     if periods.empty:
         return "Ukendt"
 
+    in_window = ((periods >= dates.window_start) & (periods <= dates.today)).any()
+
     if dates.fiscal_start is not None:
         in_fiscal_year = (periods >= dates.fiscal_start) & (periods <= dates.fiscal_end)
         if in_fiscal_year.all():
             return "Ny"
+        if in_fiscal_year.any():
+            # Har kunden ikke handlet i vinduet FØR ny-året begyndte, har den
+            # været væk — uanset hvor langt tilbage den gamle historik går.
+            dormant = (periods >= dates.window_start) & (periods < dates.fiscal_start)
+            if not dormant.any():
+                return "Genopstået"
 
-    if ((periods >= dates.window_start) & (periods <= dates.today)).any():
+    if in_window:
         return "Eksisterende"
 
     return "Tidligere"

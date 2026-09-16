@@ -522,7 +522,12 @@ def former_customers():
 
 # --- Figur 5: kundetyper -----------------------------------------------------
 
-TYPE_COLOURS = {"Ny": "#2a78d6", "Eksisterende": "#1baf7a", "Tidligere": "#7c7a73"}
+TYPE_COLOURS = {
+    "Ny": "#2a78d6",
+    "Eksisterende": "#1baf7a",
+    "Genopstået": "#8c564b",
+    "Tidligere": "#7c7a73",
+}
 
 
 def customer_types():
@@ -532,7 +537,7 @@ def customer_types():
     De to perioder — ny-regnskabsåret og eksisterende-vinduet — overlapper,
     og det er dét overlap figuren skal gøre til at få øje på.
     """
-    W, H = 1000, 616
+    W, H = 1000, 640
     left, right = 210, 786
     scale = months(2022, 1, 64)  # 2022-01 til 2027-04
     step = (right - left) / len(scale)
@@ -548,8 +553,8 @@ def customer_types():
          "al aktivitet i ny-regnskabsåret"),
         ("B", ["2026-01", "2026-06"], "Eksisterende",
          "handler også før ny-året"),
-        ("C", ["2023-01", "2026-06"], "Eksisterende",
-         "vendt tilbage efter pause"),
+        ("C", ["2023-01", "2026-06"], "Genopstået",
+         "tilbage efter års pause"),
         ("D", ["2023-12", "2025-12"], "Eksisterende",
          "seneste handel er i vinduet"),
         ("E", ["2022-01", "2023-03"], "Tidligere",
@@ -557,10 +562,10 @@ def customer_types():
     ]
 
     parts = [
-        text(28, 38, "De tre kundetyper", size=22, weight="bold"),
+        text(28, 38, "De fire kundetyper", size=22, weight="bold"),
         text(28, 64,
              "Dags dato 09-2026 · eksisterende-vindue 24 måneder · "
-             "ny-regnskabsår 2026/2027 (maj–april)",
+             "ny-regnskabsår 2026/27 (maj–april)",
              size=14.5, colour=INK_2),
     ]
 
@@ -625,19 +630,17 @@ def customer_types():
 
     _month_axis(parts, scale, x_of, axis_y, left, right, ticks=("-01", "-07"))
 
-    parts.append(
-        text(28, axis_y + 62,
-             "Rækkefølgen afgør overlappet: ligger HELE historikken i "
-             "ny-regnskabsåret, er kunden ny. Ellers er det nok med én handel "
-             "i vinduet.",
-             size=13.5, colour=INK_2)
-    )
-    parts.append(
-        text(28, axis_y + 84,
-             "Måneder efter dags dato er budgettal og tæller ikke med — "
-             "i praksis er ny-året derfor 05-2026 til 09-2026.",
-             size=13.5, colour=INK_2)
-    )
+    for offset, line_text in enumerate([
+        "Rækkefølgen afgør overlappet: ligger HELE historikken i "
+        "ny-regnskabsåret, er kunden ny.",
+        "Handler den i ny-året uden at have rørt os i vinduet før, er den "
+        "genopstået — ellers er den eksisterende.",
+        "Måneder efter dags dato er budgettal og tæller ikke med, så i "
+        "praksis er ny-året 05-2026 til 09-2026.",
+    ]):
+        parts.append(
+            text(28, axis_y + 62 + offset * 22, line_text, size=13.5, colour=INK_2)
+        )
     return W, H, parts
 
 

@@ -64,7 +64,7 @@ def _group(months):
 #: vindue (09-2024 – 09-2026) og regnskabsåret 2026/2027 (05-2026 – 04-2027).
 #: De to perioder overlapper med vilje fra 05-2026 og frem.
 DATES = ReferenceDates.from_config(
-    Config(reference_date="09-2026", new_fiscal_year="2026/2027",
+    Config(reference_date="09-2026", new_fiscal_year="2026/27",
            existing_customer_months=24)
 )
 
@@ -87,8 +87,8 @@ def test_the_fiscal_year_runs_from_its_start_month():
         ("A", ["2026-09", "2026-05"], "Ny"),
         # B: én i ny-året, én før — altså ikke en ny kunde
         ("B", ["2026-06", "2026-01"], "Eksisterende"),
-        # C: én i ny-året, én mange år tilbage. Kunden er vendt tilbage
-        ("C", ["2026-06", "2023-01"], "Eksisterende"),
+        # C: én i ny-året, én mange år tilbage — kunden er vendt tilbage
+        ("C", ["2026-06", "2023-01"], "Genopstået"),
         # D: ingen aktivitet i ny-året, men én inden for vinduet
         ("D", ["2025-12", "2023-12"], "Eksisterende"),
         # E: al aktivitet ligger før vinduet
@@ -106,6 +106,31 @@ def test_new_requires_the_whole_history_inside_the_fiscal_year():
     """
     assert classify_customer_type(_group(["2026-06"]), DATES) == "Ny"
     assert classify_customer_type(_group(["2026-06", "2026-04"]), DATES) == "Eksisterende"
+
+
+def test_the_gap_is_what_separates_revived_from_existing():
+    """
+    Begge kunder har handlet i ny-året og har gammel historik. Forskellen er
+    hullet: den ene har handlet i tiden op til året begyndte, den anden har
+    ligget helt stille. Det er to forskellige salgssituationer.
+    """
+    # Handlede i februar, altså inde i vinduet før ny-året — aldrig væk.
+    assert classify_customer_type(
+        _group(["2023-01", "2026-02", "2026-06"]), DATES
+    ) == "Eksisterende"
+    # Intet mellem 09-2024 og 05-2026 — har ligget stille og er tilbage.
+    assert classify_customer_type(_group(["2023-01", "2026-06"]), DATES) == "Genopstået"
+
+
+def test_revived_needs_activity_in_the_new_year():
+    """Uden en handel i ny-året er kunden bare eksisterende."""
+    assert classify_customer_type(_group(["2023-01", "2025-12"]), DATES) == "Eksisterende"
+
+
+def test_without_a_fiscal_year_nobody_is_revived():
+    assert classify_customer_type(
+        _group(["2023-01", "2026-06"]), NO_FISCAL_YEAR
+    ) == "Eksisterende"
 
 
 def test_the_month_the_fiscal_year_begins_counts_as_new():

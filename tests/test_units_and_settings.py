@@ -33,21 +33,32 @@ def test_fiscal_year_is_the_one_the_day_falls_in():
     de fire måneder foreslå det år der endnu ikke er begyndt — og så ville
     ingen kunde overhovedet blive klassificeret som ny.
     """
-    assert todays_fiscal_year(date(2026, 9, 15)) == "2026/2027"
-    assert todays_fiscal_year(date(2026, 5, 1)) == "2026/2027"   # første dag
-    assert todays_fiscal_year(date(2026, 4, 30)) == "2025/2026"  # sidste dag
-    assert todays_fiscal_year(date(2029, 2, 1)) == "2028/2029"
+    assert todays_fiscal_year(date(2026, 9, 15)) == "2026/27"
+    assert todays_fiscal_year(date(2026, 5, 1)) == "2026/27"   # første dag
+    assert todays_fiscal_year(date(2026, 4, 30)) == "2025/26"  # sidste dag
+    assert todays_fiscal_year(date(2029, 2, 1)) == "2028/29"
 
 
 def test_the_fiscal_year_start_month_can_be_moved():
     """Begynder året i januar, følger det kalenderåret."""
-    assert todays_fiscal_year(date(2026, 2, 1), start_month=1) == "2026/2027"
+    assert todays_fiscal_year(date(2026, 2, 1), start_month=1) == "2026/27"
 
 
-def test_the_fiscal_year_is_written_with_four_digits_on_both_sides():
-    """Skal matche kolonnen 'Fiscal year' — ellers findes ingen nye kunder."""
+def test_the_fiscal_year_is_written_the_way_the_data_is():
+    """
+    Salgsudtrækket skriver regnskabsåret som ÅÅÅÅ/ÅÅ. Klassifikationen
+    regner på datoer og er ligeglad, men står der noget andet på skærmen end
+    i Excel-filen, sætter det folk i tvivl om de har skrevet det rigtige.
+    """
     start, end = todays_fiscal_year(date(2026, 1, 1)).split("/")
-    assert len(start) == 4 and len(end) == 4
+    assert len(start) == 4 and len(end) == 2
+
+
+def test_the_turn_of_the_century_keeps_two_digits():
+    from segmentering.config import format_fiscal_year
+
+    assert format_fiscal_year(2099) == "2099/00"
+    assert format_fiscal_year(2100) == "2100/01"
 
 
 def test_a_fresh_config_is_dated_today():

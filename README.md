@@ -70,8 +70,7 @@ results = run_analysis(cfg)
 
 `run_analysis` tager også en `log`-funktion, hvis fremdriftsteksten skal et
 andet sted hen end til `print`. Brugerfladen viser kun det seneste trin og en
-fremdriftsbjælke; hele udskriften lægges i `analyse-log.txt` ved siden af
-resultatet.
+fremdriftsbjælke, og skriver ingen logfil.
 
 ## Datakrav
 
@@ -107,14 +106,22 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
    perioder der begge regnes ud fra datoerne i data:
 
    * **Ny-regnskabsåret** løber fra sin startmåned og 12 måneder frem.
-     Begynder året i maj, er 2026/2027 altså 05-2026 til og med 04-2027.
+     Begynder året i maj, er 2026/27 altså 05-2026 til og med 04-2027.
    * **Eksisterende-vinduet** er N måneder bagud fra dags dato, begge ender
      inklusive.
 
-   Perioderne overlapper, så rækkefølgen afgør: ligger **hele** historikken i
-   ny-regnskabsåret er kunden `Ny`; ellers er den `Eksisterende` hvis mindst
-   én handel falder i vinduet; ellers `Tidligere`. En kunde der vender
-   tilbage efter års pause er altså eksisterende, ikke ny.
+   Perioderne overlapper, så rækkefølgen afgør:
+
+   | Type | Betyder |
+   | --- | --- |
+   | `Ny` | **hele** historikken ligger i ny-regnskabsåret |
+   | `Genopstået` | handler i ny-året, men har intet handlet i vinduet op til året begyndte |
+   | `Eksisterende` | mindst én handel i vinduet |
+   | `Tidligere` | al aktivitet ligger før vinduet |
+
+   Forskellen på `Genopstået` og `Eksisterende` er hullet: begge kan have
+   handlet i sidste måned og have gammel historik, men den ene har handlet
+   støt hele vejen, den anden har ligget stille i årevis.
 4. **GM% pr. item** – seneste aktivitetsmåned, eller de seneste N måneder
    summeret hvis vægtet GM% er slået til.
 5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
@@ -148,9 +155,12 @@ valgte er grøn og de fravalgte røde. Fremhæv-knapperne bliver hverken grønne
 eller røde: de skjuler ingenting. De to nuancer er også forskellige i lyshed,
 så tilstanden kan aflæses af en rødgrønt farveblind.
 
-Over kundegruppe-plottet står en **farvekode** for kundetyperne. Den ligger
-uden for selve grafen — som almindelig HTML over plottet — så den hverken
-stjæler plads fra punkterne eller kan slås fra ved et uheld.
+Over kundegruppe-plottet står en **farvekode** for kundetyperne, i venstre
+side. Den ligger uden for selve grafen — som almindelig HTML over plottet —
+så den hverken stjæler plads fra punkterne eller kan slås fra ved et uheld.
+
+**Dobbeltklik** på et navn i legenden viser kun den ene kunde; dobbeltklik
+igen bringer resten tilbage.
 
 Knaprækkerne virker som **filtre der begrænser hinanden**, ikke som
 uafhængige kontakter. Har du slået alt fra på nær én KAM, og slukker og
@@ -204,9 +214,13 @@ Knappen **Gem som mine standardværdier** i indstillingsvinduet skriver
 gang programmet åbnes, og følger med hvis mappen kopieres til en kollega.
 
 Dags dato og ny-regnskabsår gemmes ikke — de udfyldes altid ud fra dagens
-dato. Er det 15-09-2026, står der `09-2026` og `2026/2027`. Regnskabsåret
+dato. Er det 15-09-2026, står der `09-2026` og `2026/27`. Regnskabsåret
 følger sin startmåned: i januar til april er man stadig i det år der begyndte
-året før, så 10-02-2026 giver `2025/2026`.
+året før, så 10-02-2026 giver `2025/26`.
+
+Formatet `ÅÅÅÅ/ÅÅ` er valgt fordi salgsudtrækket skriver det sådan.
+Klassifikationen regner på datoer og er ligeglad med teksten, men står der
+noget andet på skærmen end i Excel-filen, sætter det folk i tvivl.
 
 ## Adgangskode
 

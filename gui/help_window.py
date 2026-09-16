@@ -125,7 +125,7 @@ HELP_CONTENT: list[Block] = [
         "ikke ud fra kolonnen 'Fiscal year':\n\n"
         "  • Ny-regnskabsåret, fra sin startmåned og 12 måneder frem\n"
         "  • Eksisterende-vinduet, N måneder bagud fra 'Dags dato'\n\n"
-        "Med dags dato 09-2026, 24 måneders vindue og regnskabsåret 2026/2027 "
+        "Med dags dato 09-2026, 24 måneders vindue og regnskabsåret 2026/27 "
         "der begynder i maj:\n",
     ),
     (
@@ -141,11 +141,17 @@ HELP_CONTENT: list[Block] = [
     (
         BODY,
         "  • Ny – HELE kundens historik ligger i ny-regnskabsåret\n"
+        "  • Genopstået – handler i ny-året, men har ikke rørt os i vinduet "
+        "op til året begyndte\n"
         "  • Eksisterende – mindst én handel i eksisterende-vinduet\n"
         "  • Tidligere – al aktivitet ligger før vinduet\n\n"
         "Det er hele historikken der skal ligge i ny-året, ikke bare den "
         "seneste handel. En kunde der vender tilbage efter tre års pause er "
-        "altså ikke ny — den er eksisterende.\n\n",
+        "altså ikke ny — den er genopstået.\n\n"
+        "Forskellen på Genopstået og Eksisterende er hullet. To kunder kan "
+        "begge have handlet i sidste måned og begge have gammel historik; "
+        "den ene har handlet støt hele vejen, den anden har ligget stille i "
+        "årevis. Det er to forskellige salgssituationer.\n\n",
     ),
     (
         EXAMPLE,
@@ -153,7 +159,7 @@ HELP_CONTENT: list[Block] = [
         "  ─────────────────────────────────────────────\n"
         "  A       05-2026 og 09-2026      Ny\n"
         "  B       01-2026 og 06-2026      Eksisterende\n"
-        "  C       01-2023 og 06-2026      Eksisterende  (vendt tilbage)\n"
+        "  C       01-2023 og 06-2026      Genopstået\n"
         "  D       12-2023 og 12-2025      Eksisterende\n"
         "  E       01-2022 og 03-2023      Tidligere\n\n",
     ),
