@@ -773,7 +773,8 @@ add(
     "På begge grafer står punkterne i legenden til højre, grupperet efter " +
       "kundekategori — A+, A-, B+ og så videre. Et klik på et navn slår det " +
       "enkelte punkt fra. Et **dobbeltklik** viser kun den ene kunde og " +
-      "skjuler alle andre; dobbeltklik igen bringer resten tilbage."
+      "skjuler alle andre — det virker både på navnet i legenden og på " +
+      "selve punktet i grafen. Dobbeltklik igen bringer resten tilbage."
   ),
   p(
     "Baggrundsfarverne er zoner, ikke data. De viser hvor grænserne mellem " +

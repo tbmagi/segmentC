@@ -65,7 +65,9 @@ BUTTON_PADDING_PX = 32
 BUTTON_SPACING_PX = 14
 #: Rækkeoverskrifterne står med en mindre skrift end knapperne.
 HEADING_CHAR_PX = 4.4
-HEADING_GAP_PX = 16
+HEADING_GAP_PX = 30
+#: Fast afstand i pixels fra overskriftens højre kant til første knap.
+HEADING_CLEARANCE_PX = 12
 # Knappernes x-koordinat er i "paper"-enheder, der spænder over PLOTOMRÅDET —
 # ikke hele figuren. Bredden kendes først ved tegning, men er målt i browseren
 # til 730-750 px for begge plots med legenden ved siden af. Tallene ovenfor er
@@ -328,18 +330,29 @@ def _button_width(label: object) -> float:
     return (len(str(label)) * BUTTON_CHAR_PX + BUTTON_PADDING_PX) / BUTTON_AREA_PX
 
 
-def _row_label(text: str, y: float) -> dict:
-    """Overskrift til venstre for en knaprække, så rækkerne kan skelnes."""
+def _row_label(text: str, y: float, x: float = 0.0) -> dict:
+    """
+    Overskrift til venstre for en knaprække, så rækkerne kan skelnes.
+
+    Teksten hænges op i sin HØJRE kant, et fast stykke til venstre for der
+    hvor knapperne begynder. Den voksede før mod højre fra plotområdets
+    venstre kant, og da knappernes startpunkt er en brøkdel af et plotområde
+    der skrumper når legenden er bred, kunne knapperne ende oven i teksten på
+    netop de plots hvor kundenavnene er lange. Nu er afstanden den samme
+    uanset hvor bredt plotområdet bliver, og overskriften breder sig i stedet
+    ud i den tomme venstremargen.
+    """
     return dict(
-        x=0.0,
+        x=x,
         y=y,
         xref="paper",
         yref="paper",
         text=text,
         showarrow=False,
-        xanchor="left",
+        xanchor="right",
         yanchor="top",
         font=dict(size=10, color="#555555"),
+        xshift=-HEADING_CLEARANCE_PX,
         yshift=-7,
     )
 
@@ -506,16 +519,41 @@ _FILTER_SCRIPT = """
     });
   }
 
-  gd.on('plotly_legenddoubleclick', function (event) {
-    var index = event.curveNumber;
+  // Viser kun den ene — eller fortryder, hvis den allerede står alene.
+  function isolate(index) {
     if (showsOnly(index)) {
-      setTimeout(apply, 0);               // andet dobbeltklik fortryder
+      setTimeout(apply, 0);
     } else {
       Plotly.restyle(gd, {visible: gd.data.map(function (_, i) {
         return i === index ? true : 'legendonly';
       })});
     }
+  }
+
+  gd.on('plotly_legenddoubleclick', function (event) {
+    isolate(event.curveNumber);
     return false;
+  });
+
+  // Det samme skal kunne lade sig gøre ved at dobbeltklikke på selve punktet.
+  //
+  // Plotly har ingen hændelse for dobbeltklik på et punkt, og at tælle to
+  // klik selv dur ikke: Plotly undertrykker med vilje det andet klik, så et
+  // dobbeltklik kun giver ÉN 'plotly_click'. Til gengæld skal musen jo hvile
+  // på punktet for at kunne ramme det, så det sidst berørte spor huskes og
+  // bruges når dobbeltklikket melder sig.
+  var hovered = -1;
+
+  gd.on('plotly_hover', function (event) {
+    if (event.points && event.points.length) {
+      hovered = event.points[0].curveNumber;
+    }
+  });
+
+  gd.on('plotly_unhover', function () { hovered = -1; });
+
+  gd.on('plotly_doubleclick', function () {
+    if (hovered >= 0) { isolate(hovered); }
   });
 
   Plotly.relayout(gd, colours());         // sæt farverne inden første klik
@@ -646,7 +684,7 @@ def stack_button_rows(
         menus.extend(row_menus)
         dimensions.extend([dimension] * len(row_menus))
         if label:
-            annotations.append(_row_label(label, y))
+            annotations.append(_row_label(label, y, offset))
         y -= rows * BUTTON_ROW_GAP
         total_rows += rows
     return menus, annotations, total_rows, dimensions
@@ -1216,7 +1254,9 @@ def item_scatter(
     # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
     # udskifter hele annotations-listen, så uden dem forsvandt rækkernes
     # navne så snart man skiftede niveau.
-    static_annotations = [_row_label(level_label, BUTTON_FIRST_ROW_Y)] + row_labels
+    static_annotations = [
+        _row_label(level_label, BUTTON_FIRST_ROW_Y, offset)
+    ] + row_labels
 
     level_buttons = []
     for level, name in zip(levels, level_names):

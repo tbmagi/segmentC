@@ -102,7 +102,7 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
 2. **Item-type** – item no. klassificeres som sinter (70–77) eller støbe
    (60–67) ud fra de to første cifre og mindst 6 cifre. Et suffix på nummeret
    overruler reglen: `-S1` sinter, `-S2` støbe, `-S0` fjern helt.
-3. **Kundetype** – Ny, Eksisterende eller Tidligere, afgjort af to
+3. **Kundetype** – Ny, Genopstået, Eksisterende eller Tidligere, afgjort af to
    perioder der begge regnes ud fra datoerne i data:
 
    * **Ny-regnskabsåret** løber fra sin startmåned og 12 måneder frem.
@@ -159,8 +159,8 @@ Over kundegruppe-plottet står en **farvekode** for kundetyperne, i venstre
 side. Den ligger uden for selve grafen — som almindelig HTML over plottet —
 så den hverken stjæler plads fra punkterne eller kan slås fra ved et uheld.
 
-**Dobbeltklik** på et navn i legenden viser kun den ene kunde; dobbeltklik
-igen bringer resten tilbage.
+**Dobbeltklik** viser kun den ene kunde — enten på selve punktet eller på
+navnet i legenden. Dobbeltklik igen bringer resten tilbage.
 
 Knaprækkerne virker som **filtre der begrænser hinanden**, ikke som
 uafhængige kontakter. Har du slået alt fra på nær én KAM, og slukker og
