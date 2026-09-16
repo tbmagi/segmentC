@@ -856,19 +856,29 @@ def _axes(
     x_values: Sequence[float] = (),
     y_values: Sequence[float] = (),
 ) -> dict:
+    """
+    Akserne. Skalaen er fast: X lineær, Y logaritmisk.
+
+    Gross Margin % ligger inden for et snævert interval og skal læses som
+    procentpoint, så den hører hjemme på en lineær akse. Omsætningen spænder
+    derimod over flere størrelsesordener — fra små tusinder til mange
+    millioner — og på en lineær akse ville alt andet end de største kunder
+    klumpe sammen nede ved nul.
+    """
+    _ = cfg  # akserne afhænger ikke længere af indstillinger
     x_axis = dict(
         title="Gross Margin (%)",
-        type=cfg.x_scale,
+        type="linear",
         gridcolor=GRID_COLOUR,
     )
     y_axis = dict(
         title=y_title,
-        type=cfg.y_scale,
+        type="log",
         tickformat=",.0f",
         gridcolor=GRID_COLOUR,
     )
-    x_range = axis_range(x_values, log=cfg.x_scale == "log")
-    y_range = axis_range(y_values, log=cfg.y_scale == "log")
+    x_range = axis_range(x_values, log=False)
+    y_range = axis_range(y_values, log=True)
     if x_range:
         x_axis["range"] = x_range
     if y_range:

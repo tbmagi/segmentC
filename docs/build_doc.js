@@ -780,6 +780,14 @@ add(
     "Baggrundsfarverne er zoner, ikke data. De viser hvor grænserne mellem " +
       "kategorierne går, så det kan ses om en kunde ligger lige på vippen."
   ),
+  note(
+    "Akserne:",
+    "X-aksen er lineær og Y-aksen logaritmisk, og det kan ikke laves om. " +
+      "Gross Margin % ligger inden for et snævert interval og læses som " +
+      "procentpoint. Omsætningen spænder derimod over flere størrelses" +
+      "ordener, og på en lineær akse ville alt andet end de største kunder " +
+      "klumpe sammen nede ved nul."
+  ),
   p(
     "Øverst til venstre over kundegruppe-grafen står en lille **farvekode**, " +
       "der siger hvilken farve der hører til hvilken kundetype. Den ligger " +
@@ -910,18 +918,19 @@ add(
   h1("9  Excel-rapporten"),
   p(
     "Excel-filen indeholder tallene bag hvert punkt i graferne — det er her " +
-      "man går hen når et punkt ser mærkeligt ud. Der er faner pr. udsnit, og " +
-      "hvor detaljeret de er, styres af indstillingen **Excel-detaljeringsgrad**:"
+      "man går hen når et punkt ser mærkeligt ud. Der er tre faner pr. udsnit " +
+      "og en fane med de indstillinger kørslen brugte. Fanerne ser ens ud " +
+      "hver gang; der er ikke noget at vælge."
   ),
   table(
-    ["Grad", "Indeholder"],
+    ["Fane", "Indeholder"],
     [
-      ["minimal", "kun det absolut nødvendige — kunde, akser, kategori"],
-      ["kompakt", "de samlede tal pr. kundegruppe (anbefalet)"],
-      ["fuld", "alle kolonner, inklusive gennemsnitstal pr. kundegruppe"],
+      ["Oversigt", "én række pr. kundegruppe: type, KAM, kategori, omsætning og GM%"],
+      ["Items_alle", "alle varer, inden outlier-filteret"],
+      ["Items_filt", "de varer der faktisk blev tegnet"],
+      ["Parametre", "de indstillinger kørslen brugte"],
     ],
-    [20, 80],
-    true
+    [24, 76]
   ),
   spacer(200),
   p(
@@ -946,8 +955,7 @@ add(
       ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items, outliers"],
       ["Opdeling af plots", "sinter/støb og DK/CN, og hvilke turnover-typer der hører til hvad"],
       ["Beregning", "turnover-vinduets længde, forankring, vægtet GM%"],
-      ["Akser og områder", "linear eller logaritmisk skala, kategori-grænser, volumenområder"],
-      ["Output", "Excel-detaljeringsgrad"],
+      ["Grænser og områder", "kategori-grænser og volumenområder"],
     ],
     [30, 70]
   ),

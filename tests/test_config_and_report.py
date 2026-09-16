@@ -62,10 +62,8 @@ def test_gm_outside_zero_to_one_is_rejected():
     [
         ({"gm_months": 0}, "GM-måneder"),
         ({"turnover_window_months": 0}, "Turnover-vinduet"),
-        ({"excel_detail": "alt"}, "Excel-detaljeringsgrad"),
         ({"outlier_metric": "vilkårlig"}, "Outlier-metrik"),
         ({"group_plot_anchor": "kunden"}, "Forankring"),
-        ({"y_scale": "kvadratisk"}, "Skala"),
         ({"colour_by": "regnbue"}, "Farvelogik"),
         (
             {"geo_combined": False, "geo_cn": False, "geo_dk": False},
@@ -152,36 +150,19 @@ def sample_group_frame():
     )
 
 
-def test_full_detail_includes_the_average_columns():
-    """
-    'fuld' lovede gennemsnits-kolonner, men de blev aldrig beregnet og faldt
-    lydløst ud af rapporten. Nu skal de være der.
-    """
-    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="fuld"))
-    assert "gns_turnover_window" in sheet.columns
-    assert "gns_GM_pct" in sheet.columns
-    assert sheet["gns_GM_pct"].iloc[0] == pytest.approx(0.28)
-
-
-@pytest.mark.parametrize("detail", ["minimal", "kompakt", "fuld"])
-def test_summary_columns_follow_the_configured_detail(detail):
-    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail=detail))
-    assert list(sheet.columns) == SUMMARY_COLUMNS[detail]
-
-
-def test_detail_levels_are_strictly_nested():
-    """Hver detaljeringsgrad skal indeholde alt fra den lettere grad."""
-    assert set(SUMMARY_COLUMNS["minimal"]) <= set(SUMMARY_COLUMNS["kompakt"])
-    assert set(SUMMARY_COLUMNS["kompakt"]) <= set(SUMMARY_COLUMNS["fuld"])
+def test_the_summary_sheet_always_has_the_same_columns():
+    """Rapporten har kun én udgave, så fanen ser ens ud hver gang."""
+    sheet = prepare_summary_sheet(sample_group_frame(), Config())
+    assert list(sheet.columns) == SUMMARY_COLUMNS
 
 
 def test_percentages_stay_decimal_so_excel_can_format_them():
-    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="kompakt"))
+    sheet = prepare_summary_sheet(sample_group_frame(), Config())
     assert sheet["samlet_GM_pct"].iloc[0] == pytest.approx(0.30)
 
 
 def test_dates_are_written_as_year_month():
-    sheet = prepare_summary_sheet(sample_group_frame(), Config(excel_detail="kompakt"))
+    sheet = prepare_summary_sheet(sample_group_frame(), Config())
     assert sheet["seneste_aktivitet"].iloc[0] == "2025-06"
 
 
@@ -204,7 +185,7 @@ def sample_item_frame():
 
 
 def test_item_sheet_uses_readable_column_names():
-    sheet = prepare_item_sheet(sample_item_frame(), Config(excel_detail="kompakt"))
+    sheet = prepare_item_sheet(sample_item_frame(), Config())
     assert "Turnover_DKK_12mdr_item" in sheet.columns
     assert "Turnover_DKK_12mdr_gruppe" in sheet.columns
     assert "GM_pct" in sheet.columns
@@ -215,6 +196,21 @@ def test_item_window_column_follows_the_configured_window():
     assert "Turnover_DKK_24mdr_item" in sheet.columns
 
 
-def test_minimal_item_sheet_is_reduced():
-    sheet = prepare_item_sheet(sample_item_frame(), Config(excel_detail="minimal"))
-    assert list(sheet.columns) == [GROUP, ITEM_NO, "Turnover_DKK_12mdr_item", "GM_pct"]
+def test_the_item_sheet_always_has_the_same_columns():
+    """
+    Kun én udgave af rapporten. KAM står ikke med her, fordi prøve-rammen
+    ikke har den kolonne — manglende kolonner springes over i stedet for at
+    vælte fanen.
+    """
+    sheet = prepare_item_sheet(sample_item_frame(), Config())
+    assert list(sheet.columns) == [
+        GROUP, ITEM_NO, "Turnover_DKK_12mdr_item", "Turnover_DKK_12mdr_gruppe",
+        "Turnover_DKK_seneste_md", "GP_DKK_seneste_md", "GM_pct",
+        FIRST_ACTIVITY, LAST_ACTIVITY,
+    ]
+
+
+def test_the_item_sheet_keeps_kam_when_the_data_has_it():
+    frame = sample_item_frame()
+    frame[KAM] = ["PHA"]
+    assert list(prepare_item_sheet(frame, Config()).columns)[:3] == [GROUP, KAM, ITEM_NO]

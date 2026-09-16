@@ -146,6 +146,11 @@ knapperne under plottet slår en hel blok fra:
 | Kundegruppe | én kundegruppe | kundenavne pr. kategori | kundetype |
 | Item | ét item no. | kundenavne pr. kategori | kundegruppe |
 
+Akserne er faste: **X lineær, Y logaritmisk.** GM% ligger inden for et snævert
+interval og læses som procentpoint; omsætningen spænder over flere
+størrelsesordener, og på en lineær akse ville alt andet end de største kunder
+klumpe sammen nede ved nul.
+
 Knaprækkerne under kundegruppe-plottet er kundetype, kategori, KAM og
 branche. Under item-plottet er de volumenkrav, kategori og KAM.
 

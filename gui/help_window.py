@@ -278,6 +278,12 @@ HELP_CONTENT: list[Block] = [
         "alle items ser ekstreme ud beholdes urørt frem for at forsvinde.\n\n",
     ),
 
+    (NOTE,
+     "Akserne er faste: X er lineær og Y logaritmisk. GM% læses som "
+     "procentpoint, mens omsætningen spænder over flere størrelsesordener — "
+     "på en lineær akse ville alt andet end de største kunder klumpe sammen "
+     "nede ved nul.\n\n"),
+
     (HEADING, "Trin 8: Plots og Excel-rapport\n"),
     (
         BODY,

@@ -27,9 +27,7 @@ from typing import Iterable, Literal, Mapping, Sequence
 #:   "item"  -> N måneder bagud fra HVERT ITEMS egen seneste aktivitet.
 Anchor = Literal["group", "item"]
 
-AxisScale = Literal["linear", "log"]
 OutlierMetric = Literal["begge", "turnover", "gm", "ingen"]
-ExcelDetail = Literal["minimal", "kompakt", "fuld"]
 ColourBy = Literal["kundetype", "industry_segment"]
 
 TDKK = 1_000  # tabel-referencerne nedenfor er i tusinde DKK
@@ -357,8 +355,6 @@ class Config:
     draw_group_plot: bool = True
     draw_item_plot: bool = True
     colour_by: ColourBy = "kundetype"
-    x_scale: AxisScale = "linear"
-    y_scale: AxisScale = "log"
     category_bands: dict[str, Band] = field(
         default_factory=lambda: dict(DEFAULT_CATEGORY_BANDS)
     )
@@ -370,7 +366,6 @@ class Config:
     output_basename: str = "kunde_segmentering"
     output_dir: str | None = None
     write_excel: bool = True
-    excel_detail: ExcelDetail = "kompakt"
 
     def __post_init__(self) -> None:
         # Tillad at kalderen sender rå (min, max, gm)-tupler.
@@ -425,11 +420,6 @@ class Config:
                 "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅ, fx 2026/27. "
                 f"Fik: {self.new_fiscal_year!r}"
             )
-        if self.excel_detail not in ("fuld", "kompakt", "minimal"):
-            raise ValueError(
-                "Excel-detaljeringsgrad skal være 'fuld', 'kompakt' eller "
-                f"'minimal', fik: {self.excel_detail!r}"
-            )
         if self.outlier_metric not in ("begge", "turnover", "gm", "ingen"):
             raise ValueError(
                 "Outlier-metrik skal være 'begge', 'turnover', 'gm' eller "
@@ -443,11 +433,6 @@ class Config:
                 raise ValueError(
                     f"Forankring for {name} skal være 'group' eller 'item', "
                     f"fik: {anchor!r}"
-                )
-        for name, scale in (("X-aksen", self.x_scale), ("Y-aksen", self.y_scale)):
-            if scale not in ("linear", "log"):
-                raise ValueError(
-                    f"Skala for {name} skal være 'linear' eller 'log', fik: {scale!r}"
                 )
         if self.colour_by not in ("kundetype", "industry_segment"):
             raise ValueError(
@@ -469,6 +454,12 @@ class Config:
 #: Gemte man dem, ville programmet stivne på den dag indstillingerne blev
 #: gemt, og ændring af dags dato ville miste sin pointe.
 DATE_DERIVED_FIELDS = ("reference_date", "new_fiscal_year")
+
+#: Indstillinger der har været der før, men er taget ud igen. De springes
+#: over i stedet for at blive afvist som ukendte: ellers ville en gemt fil
+#: fra en tidligere version pludselig give en fejl ved opstart, og brugerens
+#: øvrige standardværdier ville gå tabt sammen med den.
+RETIRED_FIELDS = ("x_scale", "y_scale", "excel_detail")
 
 
 def settings_path() -> str:
@@ -535,6 +526,9 @@ def load_defaults(path: str | None = None) -> "Config":
             f"Årsag: {exc}\n"
             "Slet filen for at vende tilbage til fabriksindstillingerne."
         ) from exc
+
+    for field_name in RETIRED_FIELDS:
+        data.pop(field_name, None)
 
     known = {f.name for f in fields(Config)}
     unknown = sorted(set(data) - known)

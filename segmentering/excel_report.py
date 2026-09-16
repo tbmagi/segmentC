@@ -39,49 +39,35 @@ THOUSANDS_FORMAT = "#,##0"
 PERCENT_COLUMNS = {"samlet_GM_pct", "gns_GM_pct", "GM_pct"}
 
 #: Kolonner pr. detaljeringsgrad for oversigts-fanen, i visningsrækkefølge.
-SUMMARY_COLUMNS: dict[str, list[str]] = {
-    "minimal": [
-        GROUP,
-        "Kundetype",
-        KAM,
-        "Kundekategori",
-        INDUSTRY_SEGMENT,
-        "antal_items",
-        "samlet_turnover_window",
-        "samlet_GM_pct",
-    ],
-    "kompakt": [
-        GROUP,
-        "Kundetype",
-        KAM,
-        "Kundekategori",
-        INDUSTRY_SEGMENT,
-        "antal_items",
-        "samlet_turnover_window",
-        "samlet_turnover",
-        "samlet_GP",
-        "samlet_GM_pct",
-        "tidligste_aktivitet",
-        "seneste_aktivitet",
-    ],
-    "fuld": [
-        GROUP,
-        "Kundetype",
-        KAM,
-        "Kundekategori",
-        INDUSTRY_SEGMENT,
-        "antal_items",
-        "samlet_turnover_window",
-        "gns_turnover_window",
-        "samlet_turnover",
-        "gns_turnover",
-        "samlet_GM_pct",
-        "gns_GM_pct",
-        "samlet_GP",
-        "tidligste_aktivitet",
-        "seneste_aktivitet",
-    ],
-}
+#: Kolonnerne på oversigts-fanen, i den rækkefølge de står.
+SUMMARY_COLUMNS: list[str] = [
+    GROUP,
+    "Kundetype",
+    KAM,
+    "Kundekategori",
+    INDUSTRY_SEGMENT,
+    "antal_items",
+    "samlet_turnover_window",
+    "samlet_turnover",
+    "samlet_GP",
+    "samlet_GM_pct",
+    "tidligste_aktivitet",
+    "seneste_aktivitet",
+]
+
+#: Kolonnerne på item-fanerne. Outlier-fanen lægger z-scorerne foran.
+ITEM_COLUMNS: list[str] = [
+    GROUP,
+    KAM,
+    ITEM_NO,
+    "__item_window__",
+    "__group_window__",
+    "Turnover_DKK_seneste_md",
+    "GP_DKK_seneste_md",
+    "GM_pct",
+    FIRST_ACTIVITY,
+    LAST_ACTIVITY,
+]
 
 
 def _is_money_column(name: object) -> bool:
@@ -113,7 +99,8 @@ def prepare_summary_sheet(per_group: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         if source in summary.columns:
             summary[target] = summary[source]
 
-    columns = [c for c in SUMMARY_COLUMNS[cfg.excel_detail] if c in summary.columns]
+    _ = cfg  # fanerne ser ens ud hver gang
+    columns = [c for c in SUMMARY_COLUMNS if c in summary.columns]
     summary = summary[columns]
     if "samlet_turnover_window" in summary.columns:
         summary = summary.sort_values(
@@ -161,24 +148,11 @@ def prepare_item_sheet(
             FIRST_ACTIVITY,
             LAST_ACTIVITY,
         ]
-    elif cfg.excel_detail == "minimal":
-        preferred = [GROUP, ITEM_NO, item_window, "GM_pct"]
-    elif cfg.excel_detail == "kompakt":
+    else:
         preferred = [
-            GROUP,
-            KAM,
-            ITEM_NO,
-            item_window,
-            group_window,
-            "Turnover_DKK_seneste_md",
-            "GP_DKK_seneste_md",
-            "GM_pct",
-            FIRST_ACTIVITY,
-            LAST_ACTIVITY,
+            {"__item_window__": item_window, "__group_window__": group_window}.get(c, c)
+            for c in ITEM_COLUMNS
         ]
-    else:  # "fuld" – behold alle kolonner i en fornuftig rækkefølge
-        leading = [GROUP, ITEM_NO, item_window, group_window]
-        preferred = leading + [c for c in items.columns if c not in leading]
 
     items = items[[c for c in preferred if c in items.columns]]
     if item_window in items.columns:
@@ -206,7 +180,6 @@ def parameter_sheet(cfg: Config, dates) -> pd.DataFrame:
         ("Outlier-tærskel (std)", cfg.outlier_std_threshold),
         ("Outlier metrik", cfg.outlier_metric),
         ("Farvelogik på kundegruppe-plot", cfg.colour_by),
-        ("Excel-detaljer", cfg.excel_detail),
     ]
     return pd.DataFrame(rows, columns=["Parameter", "Værdi"])
 

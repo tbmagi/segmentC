@@ -132,6 +132,24 @@ def test_a_damaged_file_is_reported(tmp_path):
         load_defaults(str(path))
 
 
+def test_settings_saved_before_a_field_was_removed_still_load(tmp_path):
+    """
+    Akse-skala og Excel-detaljeringsgrad er taget ud af programmet. En fil
+    gemt før da indeholder dem stadig, og den skal stadig kunne læses — ellers
+    ville brugerens øvrige standardværdier gå tabt sammen med dem.
+    """
+    path = tmp_path / "indstillinger.json"
+    path.write_text(
+        json.dumps({
+            "turnover_window_months": 18,
+            "x_scale": "linear", "y_scale": "log", "excel_detail": "fuld",
+        }),
+        encoding="utf-8",
+    )
+    restored = load_defaults(str(path))
+    assert restored.turnover_window_months == 18
+
+
 def test_settings_from_another_version_are_reported(tmp_path):
     path = tmp_path / "indstillinger.json"
     path.write_text(json.dumps({"et_felt_der_ikke_findes": 1}), encoding="utf-8")

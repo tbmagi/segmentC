@@ -175,8 +175,6 @@ class SegmenteringApp(tk.Tk):
         self.var_weighted_gm = tk.BooleanVar()
         self.var_gm_months = tk.IntVar()
 
-        self.var_y_scale = tk.StringVar()
-        self.var_x_scale = tk.StringVar()
         self.var_colour_by = tk.StringVar(value="kundetype")
 
         self.var_bands = {level: tk.StringVar() for level in CATEGORY_LEVELS}
@@ -184,8 +182,6 @@ class SegmenteringApp(tk.Tk):
             level: {zone: tk.StringVar() for zone in VOLUME_ZONE_NAMES}
             for level in CATEGORY_LEVELS
         }
-
-        self.var_excel_detail = tk.StringVar()
 
     # -- Opbygning ------------------------------------------------------------
 
@@ -310,7 +306,6 @@ class SegmenteringApp(tk.Tk):
         self._build_split_section(page)
         self._build_calculation_section(page)
         self._build_axes_section(page)
-        self._build_output_section(page)
 
         buttons = ttk.Frame(window, padding=(12, 10))
         buttons.pack(fill="x", side="bottom")
@@ -403,7 +398,7 @@ class SegmenteringApp(tk.Tk):
         ).grid(row=1, column=3, sticky="w", padx=(4, 0))
 
     def _build_filter_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "3  Frasortering")
+        frame = section(parent, "Frasortering")
         frame.pack(fill="x", padx=10, pady=5)
 
         ttk.Label(frame, text="Ekskluder kundegrupper\n(komma-separeret):").grid(
@@ -578,7 +573,7 @@ class SegmenteringApp(tk.Tk):
         frame.columnconfigure(2, weight=1)
 
     def _build_calculation_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "5  Beregning")
+        frame = section(parent, "Beregning")
         frame.pack(fill="x", padx=10, pady=5)
 
         heading(frame, "Turnover vindue (Y-aksen):").grid(
@@ -666,31 +661,8 @@ class SegmenteringApp(tk.Tk):
         ).grid(row=6, column=4, sticky="w", padx=(0, 4))
 
     def _build_axes_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "6  Akser og områder")
+        frame = section(parent, "Grænser og områder")
         frame.pack(fill="x", padx=10, pady=5)
-
-        ttk.Label(frame, text="Y-akse skala:").grid(row=0, column=0, sticky="w", pady=3)
-        ttk.Combobox(
-            frame, textvariable=self.var_y_scale, width=10,
-            values=["linear", "log"], state="readonly",
-        ).grid(row=0, column=1, sticky="w", padx=5)
-        ttk.Label(frame, text="X-akse skala:").grid(row=0, column=2, sticky="w", padx=(15, 0))
-        ttk.Combobox(
-            frame, textvariable=self.var_x_scale, width=10,
-            values=["linear", "log"], state="readonly",
-        ).grid(row=0, column=3, sticky="w", padx=5)
-        help_icon(
-            frame,
-            "Skalering af akserne.\n\n"
-            "linear: direkte værdier.\n"
-            "log: logaritmisk skala – nyttigt ved stor spredning i omsætning.\n\n"
-            "Aksegrænser kan justeres direkte i grafen i browseren.",
-        ).grid(row=0, column=4, sticky="w", padx=(4, 0))
-
-        ttk.Separator(frame, orient="horizontal").grid(
-            row=1, column=0, columnspan=6, sticky="ew", pady=6
-        )
-
         self._build_band_panel(frame)
         self._build_zone_panel(frame)
 
@@ -779,24 +751,6 @@ class SegmenteringApp(tk.Tk):
             row=4, column=0, columnspan=5, sticky="w", pady=(8, 0)
         )
 
-    def _build_output_section(self, parent: tk.Widget) -> None:
-        frame = section(parent, "7  Output")
-        frame.pack(fill="x", padx=10, pady=5)
-
-        ttk.Label(frame, text="Excel-detaljeringsgrad:").grid(
-            row=0, column=0, sticky="w", pady=3
-        )
-        ttk.Combobox(
-            frame, textvariable=self.var_excel_detail, width=12,
-            values=["minimal", "kompakt", "fuld"], state="readonly",
-        ).grid(row=0, column=1, sticky="w", padx=5)
-        help_icon(
-            frame,
-            "Detaljeringsgrad i Excel-rapporten:\n\n"
-            "  • fuld    : alle kolonner, inkl. gennemsnitstal pr. kundegruppe\n"
-            "  • kompakt : de samlede tal pr. kundegruppe (anbefalet)\n"
-            "  • minimal : kun det absolut nødvendige",
-        ).grid(row=0, column=2, sticky="w", padx=(4, 4), pady=3)
 
     def _build_run_section(self, parent: tk.Widget) -> None:
         frame = ttk.Frame(parent, padding=(10, 12))
@@ -915,10 +869,7 @@ class SegmenteringApp(tk.Tk):
         self.var_weighted_gm.set(cfg.gm_months > 1)
         self.var_gm_months.set(cfg.gm_months if cfg.gm_months > 1 else 3)
 
-        self.var_y_scale.set(cfg.y_scale)
-        self.var_x_scale.set(cfg.x_scale)
         self.var_colour_by.set(cfg.colour_by)
-        self.var_excel_detail.set(cfg.excel_detail)
 
         for level, variable in self.var_bands.items():
             band = cfg.category_bands.get(level)
@@ -978,13 +929,10 @@ class SegmenteringApp(tk.Tk):
             item_plot_anchor=ANCHOR_VALUES[self.var_item_anchor.get()],
             gm_months=int(self.var_gm_months.get()) if self.var_weighted_gm.get() else 1,
             colour_by=self.var_colour_by.get(),
-            y_scale=self.var_y_scale.get(),
-            x_scale=self.var_x_scale.get(),
             category_bands=bands,
             volume_zones=zones,
             output_basename=self.var_basename.get().strip() or "kunde_segmentering",
             output_dir=self.var_output_dir.get().strip() or None,
-            excel_detail=self.var_excel_detail.get(),
         )
 
     # -- Tilstand -------------------------------------------------------------
