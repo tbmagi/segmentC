@@ -208,7 +208,7 @@ run_gui.py             start brugerfladen
 build_exe.py           pak programmet til én fil der kan dobbeltklikkes
 byg_exe.bat            samme, til dobbeltklik på Windows
 kundesegmentering.ico  ikon på den byggede programfil
-docs/                  Word-introduktionen og scriptet der bygger den
+docs/                  Word-introduktionen, figurerne og deres byggescripts
 tests/                 pytest-tests af beregningslogikken
 ```
 
@@ -223,11 +223,18 @@ der skal overtage det: hvad analysen gør, hvordan tallene bliver til, og
 hvordan graferne læses — uden kode. Den bygges om med:
 
 ```bash
+python docs/build_figures.py     # tegner figurerne
 npm install docx
-node docs/build_doc.js
+node docs/build_doc.js           # samler dokumentet
 ```
 
-Rettelser hører hjemme i `docs/build_doc.js`, så dokumentet kan bygges igen.
+Rettelser hører hjemme i `docs/build_doc.js` og `docs/build_figures.py`, så
+dokumentet kan bygges igen.
+
+Figurerne tegnes som SVG uden tegnebibliotek og lægges i `docs/figurer`. Er
+Playwright installeret, skrives de også som PNG i dobbelt opløsning — det er
+PNG-filerne Word bruger. De illustrerer reglerne med de samme tal som
+regneeksemplet i dokumentets kapitel 5, så figur og tekst passer sammen.
 
 ## Tests
 

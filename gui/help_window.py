@@ -152,13 +152,16 @@ HELP_CONTENT: list[Block] = [
         "  ──────────────────────────────────────────────────────\n"
         "  712345   2025-05       Ja           8.000     2.400  (30% GM)\n"
         "  712346   2025-08       Ja          20.000    10.000  (50% GM)\n"
-        "  712347   2023-11       Nej → fjernes\n\n",
+        "  712347   2023-11       Nej          12.000     1.200  (10% GM)\n\n",
     ),
     (
         NOTE,
         "712347 blev sidst handlet for næsten to år siden og falder uden for "
         "vinduet. Den sorteres fra i trin 1, og resten bygger kun på 712345 "
-        "og 712346.\n\n",
+        "og 712346.\n\n"
+        "Det flytter noget: med filteret bliver kundens GM% 12.400/28.000 = "
+        "44%. Uden ville den gamle handel til 10% margin trække den ned på "
+        "13.600/40.000 = 34%.\n\n",
     ),
 
     (HEADING, "Trin 5: GM% pr. kundegruppe (X-aksen)\n"),

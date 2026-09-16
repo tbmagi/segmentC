@@ -17,6 +17,7 @@ const {
   Document,
   Footer,
   HeadingLevel,
+  ImageRun,
   PageBreak,
   PageNumber,
   Packer,
@@ -207,6 +208,47 @@ const table = (headers, rows, widths, mono = false) =>
 
 const spacer = (after = 200) =>
   new Paragraph({ spacing: { after }, children: [new TextRun("")] });
+
+/**
+ * En figur med billedtekst.
+ *
+ * Figurerne bygges af docs/build_figures.py. Er de ikke bygget endnu, springes
+ * de over med en advarsel i stedet for at vælte hele dokumentet — teksten kan
+ * stå på egne ben.
+ */
+// px ved 96 dpi. 588 px ~ 6,1" og har luft til A4-margenerne (6,27" fri bredde).
+const FIGURE_WIDTH = 588;
+
+const figure = (name, width, height, caption) => {
+  const file = path.join(__dirname, "figurer", `${name}.png`);
+  if (!fs.existsSync(file)) {
+    console.warn(`  ! figuren ${name}.png mangler — kør docs/build_figures.py`);
+    return [];
+  }
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 200, after: 60 },
+      children: [
+        new ImageRun({
+          data: fs.readFileSync(file),
+          type: "png",
+          transformation: {
+            width: FIGURE_WIDTH,
+            height: Math.round((FIGURE_WIDTH * height) / width),
+          },
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 220 },
+      children: [
+        new TextRun({ text: caption, size: 19, italics: true, color: GREY }),
+      ],
+    }),
+  ];
+};
 
 const pageBreak = () => new Paragraph({ children: [new PageBreak()] });
 
@@ -432,6 +474,35 @@ add(
       "En vare der sidst blev solgt for to år siden skal ikke trække kundens " +
       "margin i nogen retning i dag."
   ),
+  ...figure(
+    "budgettal", 1000, 268,
+    "Figur 1 — Måneder efter dags dato er endnu ikke realiseret og tælles ikke med."
+  ),
+  h2("Døde items — den frasortering der flytter mest"),
+  p(
+    "Den sidste af de fem er værd at dvæle ved, for den er den eneste der " +
+      "fjerner noget som faktisk ER solgt. Reglen er enkel: **har en vare " +
+      "ingen aktivitet inden for kundens turnover-vindue, ryger den helt ud " +
+      "af analysen** — også ud af margin-beregningen på X-aksen."
+  ),
+  ...figure(
+    "doede-items", 1000, 584,
+    "Figur 2 — Kundens vindue går 12 måneder bagud fra dens seneste aktivitet. " +
+      "712347 blev sidst handlet længe før og falder ud."
+  ),
+  p(
+    "Uden den regel ville en gammel handel hænge ved i det uendelige. I " +
+      "eksemplet ovenfor blev 712347 sidst solgt i 2023-11 til 10 % margin. " +
+      "Tælles den med, ser Eksempel A/S ud til at ligge på 34 % — regnes der " +
+      "kun på det kunden faktisk handler i dag, er tallet 44 %. Det er " +
+      "forskellen på en kunde man vil have flere af, og en man skal se på."
+  ),
+  note(
+    "Bemærk:",
+    "vinduet regnes altid fra KUNDENS seneste aktivitet, uanset hvad " +
+      "forankringen er sat til under Beregning. Ellers ville en vare kunne " +
+      "holde sig selv i live."
+  ),
   h2("Trin 2 — Item-type: sinter eller støb"),
   p("Varenummeret afgør typen ud fra de to første cifre:"),
   code([
@@ -490,6 +561,11 @@ add(
     "**Item** — vinduet regnes bagud fra hver vares egen seneste aktivitet. " +
       "To varer hos samme kunde kan have forskudte perioder."
   ),
+  ...figure(
+    "forankring", 1000, 502,
+    "Figur 3 — Samme to varer, samme data. Forankringen afgør hvilken " +
+      "periode hver vare måles over."
+  ),
   h2("Trin 6 — Outlier-filter"),
   p(
     "Valgfrit. Inden for hver kundegruppe kan enkeltvarer der ligger " +
@@ -540,7 +616,7 @@ add(
     [
       ["712345", "2025-05", "Ja", "8.000", "2.400"],
       ["712346", "2025-08", "Ja", "20.000", "10.000"],
-      ["712347", "2023-11", "Nej — fjernes", "—", "—"],
+      ["712347", "2023-11", "Nej — fjernes", "12.000", "1.200"],
     ],
     [16, 24, 24, 18, 18],
     true
@@ -549,7 +625,9 @@ add(
   p(
     "712347 blev sidst handlet for næsten to år siden og falder uden for " +
       "vinduet. Den sorteres fra i trin 1, og resten bygger kun på 712345 og " +
-      "712346.",
+      "712346. Tallene står med for at vise hvad der bliver lagt til side — " +
+      "de indgår ikke i nogen beregning. Det er den samme kunde som i " +
+      "figur 2.",
     { italics: true, color: GREY }
   ),
   h2("X-koordinatet: Gross Margin %"),
