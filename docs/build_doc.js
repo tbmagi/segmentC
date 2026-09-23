@@ -655,54 +655,27 @@ add(
     "Figur 5 — Samme to varer, samme data. Forankringen afgør hvilken " +
       "periode hver vare måles over."
   ),
-  h2("Trin 6 — Frasortering af ekstreme varer"),
+  h2("Trin 6 — GM%-grænser"),
   p(
-    "Valgfrit, og der er to uafhængige mekanismer. Begge fjerner varen fra " +
-      "grafen **og** fra kundens samlede tal, og begge skriver de fjernede " +
-      "varer på Excel-fanen Outliers med en årsag."
+    "Varer hvis margin ligger uden for et fast spænd sorteres fra, inden " +
+      "varerne lægges sammen til kundegruppe-niveau. Standarden er **under " +
+      "−50 %**, og der er ingen øvre grænse. Lader man et felt stå tomt, er " +
+      "der ingen grænse i den retning."
   ),
   p(
-    "**Z-score** måler hver vare mod kundens øvrige varer. Tærsklen sættes " +
-      "i antal standardafvigelser: 1 er aggressiv, 2 er det typiske valg, " +
-      "3 fjerner kun det virkelig ekstreme."
-  ),
-  p(
-    "Den har en begrænsning det er værd at kende. Den største z-score der " +
-      "overhovedet kan opstå hos en kunde med n varer er kvadratroden af " +
-      "(n−1):"
-  ),
-  code([
-    "  2 varer  ->  største mulige z-score  1,00",
-    "  3 varer  ->                          1,41",
-    "  4 varer  ->                          1,73",
-    "  5 varer  ->                          2,00",
-    "  6 varer  ->                          2,24",
-  ]),
-  p(
-    "Med tærskel 2 fjernes der derfor **aldrig** noget hos en kunde med " +
-      "under seks varer — uanset hvor vild marginen er. Grunden er at varen " +
-      "selv er med til at bestemme det målebånd den måles med: en margin på " +
-      "−1014 % blandt tre varer trækker gennemsnittet ned til −307 % og " +
-      "spredningen op på 500 procentpoint, og målt mod dét ligger varen kun " +
-      "1,4 spredninger fra midten."
-  ),
-  p(
-    "**Faste GM%-grænser** dækker netop det hul. De frasorterer varer hvis " +
-      "margin ligger uden for et fast spænd — fx under −30 % eller over " +
-      "100 % — og de virker ved ethvert antal varer, også hos en kunde med " +
-      "to. Lader man et felt stå tomt, er der ingen grænse i den retning."
-  ),
-  p(
-    "Grænserne anvendes **før** z-scoren, så en vild vare ikke får lov at " +
-      "trække spredningen op og skjule de øvrige afvigere. De virker også " +
-      "når Fjern outliers er slået helt fra."
+    "Den nedre standard fanger de rækker hvor omkostningen og omsætningen " +
+      "er landet i hver sin måned — en kreditnota eller en returvare — uden " +
+      "at røre ved varer der bare er solgt med tab. En øvre grænse omkring " +
+      "100 % er værd at overveje: en GM over 100 % betyder at " +
+      "dækningsbidraget er større end omsætningen, hvilket ikke kan lade " +
+      "sig gøre ved et normalt salg."
   ),
   note(
-    "Kunden forsvinder aldrig helt.",
-    "Ligger alle en kundes varer uden for spændet, beholdes de urørt. " +
-      "Ellers ville kunden ryge ud af analysen — også ud af sin egen " +
-      "omsætning — uden at nogen lagde mærke til det. Det siges i " +
-      "fremdriftsteksten når det sker."
+    "En frasorteret vare tæller ikke med.",
+    "Den ryger også ud af kundens samlede omsætning, GP og GM%. Ligger alle " +
+      "en kundes varer uden for spændet, beholdes de urørt, så kunden ikke " +
+      "forsvinder helt ud af analysen. De fjernede varer står på " +
+      "Excel-fanen Outliers med en årsag."
   ),
   h2("Trin 7 — Kundekategori"),
   p(
@@ -798,6 +771,7 @@ add(
   table(
     ["", "Kundegruppe-grafen", "Item-grafen"],
     [
+      ["Overskriften", "Kundesegmentering – Kundegruppe – <udsnit>", "Kundesegmentering – Item – <udsnit>"],
       ["Ét punkt er", "én kundegruppe", "ét varenummer hos én kunde"],
       ["Farven følger", "kundetypen", "kundegruppen"],
       ["Legenden viser", "kundenavne pr. kategori", "kundenavne pr. kategori"],
@@ -829,6 +803,21 @@ add(
       "procentpoint. Omsætningen spænder derimod over flere størrelses" +
       "ordener, og på en lineær akse ville alt andet end de største kunder " +
       "klumpe sammen nede ved nul."
+  ),
+  h2("Negativ omsætning"),
+  p(
+    "En logaritmisk akse kan ikke vise nul eller negative tal — logaritmen " +
+      "af dem findes ikke. Kunder og varer med negativ omsætning, altså " +
+      "kreditnotaer og returvarer, faldt derfor tidligere helt ud af " +
+      "grafen, selvom de talte med i kundens tal."
+  ),
+  p(
+    "Er der nuller eller negative tal at vise, skifter Y-aksen nu til en " +
+      "**symlog-akse**: logaritmisk i begge retninger, med et lille lineært " +
+      "bælte omkring nul så tallene tæt på nul ikke breder sig ud i det " +
+      "uendelige. Mærkerne på aksen står stadig ved rigtige kronebeløb, og " +
+      "hover-boksen viser altid kroner. Er alt positivt, ser aksen ud " +
+      "præcis som før."
   ),
   p(
     "Under kundegruppe-grafen — mellem x-aksen og den første knaprække — " +
@@ -1033,7 +1022,7 @@ add(
     ["Fane", "Indeholder"],
     [
       ["Oversigt", "én række pr. kundegruppe: type, KAM, kategori, omsætning og GM%"],
-      ["Items_alle", "alle varer, inden outlier-filteret"],
+      ["Items_alle", "alle varer, inden GM%-grænserne"],
       ["Items_filt", "de varer der faktisk blev tegnet"],
       ["Parametre", "de indstillinger kørslen brugte"],
     ],
@@ -1041,7 +1030,7 @@ add(
   ),
   spacer(200),
   p(
-    "Er outlier-filteret slået til, kan det ses i rapporten hvilke varer der " +
+    "Er der sat en GM%-grænse, kan det ses i rapporten hvilke varer der " +
       "blev sorteret fra, og hvorfor."
   )
 );
@@ -1059,7 +1048,7 @@ add(
     [
       ["Placering af resultatet", "output-mappe, basisnavn på filerne og engelsk udgave af graferne"],
       ["Kundetyper", "hvor mange måneder bagud en kunde regnes som eksisterende"],
-      ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items, outliers og faste GM%-grænser"],
+      ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items og GM%-grænser"],
       ["Opdeling af plots", "sinter/støb og DK/CN, og hvilke turnover-typer der hører til hvad"],
       ["Beregning", "turnover-vinduets længde, forankring, vægtet GM%"],
       ["Grænser og områder", "kategori-grænser og volumenområder"],
@@ -1112,11 +1101,11 @@ add(
       ],
       [
         "En vare mangler på item-grafen",
-        "Varen har nul eller negativ turnover i vinduet. Y-aksen er logaritmisk, og logaritmen af et negativt tal findes ikke, så punktet kan ikke tegnes. Varen tæller stadig fuldt ud med i kundens omsætning, GM% og kategori, og den står i Excel-rapporten.",
+        "Enten mangler varen et turnover-tal i vinduet og kan derfor ikke placeres, eller også er den sorteret fra af GM%-grænsen. Fanen Outliers i Excel-rapporten viser hvilke varer der blev fjernet, og hvorfor.",
       ],
       [
-        "En vare med vanvittig margin bliver ikke fjernet",
-        "Har kunden under seks varer, kan z-scoren ikke nå op over tærskel 2 — se kapitel 4, trin 6. Brug de faste GM%-grænser i stedet.",
+        "Y-aksen ser anderledes ud end sidst",
+        "Der er kommet kunder eller varer med negativ omsætning med. Så skifter aksen til symlog og får negative mærker — se kapitel 6.",
       ],
       [
         "Programmet kan ikke gemme",

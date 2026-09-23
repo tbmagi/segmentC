@@ -35,7 +35,9 @@ class Texts:
     existing_customers: str  # {start} {end} {months}
     turnover_window: str  # {months}
     edge_is_segment: str
-    outliers_removed: str  # {threshold}
+    gm_limit_below: str  # {low}
+    gm_limit_above: str  # {high}
+    gm_limit_range: str  # {low} {high}
 
     # Legende
     legend_title: str
@@ -90,6 +92,27 @@ class Texts:
         """Oversætter ét led i filnavnet, fx "stoebe" -> "cast"."""
         return self.file_parts.get(value, value)
 
+    def gm_limit_note(self, low: float | None, high: float | None) -> str:
+        """Noten om GM%-grænserne til undertitlen. Tom hvis der ingen er."""
+        if low is None and high is None:
+            return ""
+        if low is None:
+            return self.gm_limit_above.format(high=f"{high:g}")
+        if high is None:
+            return self.gm_limit_below.format(low=f"{low:g}")
+        return self.gm_limit_range.format(low=f"{low:g}", high=f"{high:g}")
+
+    def plot_title(self, base: str, segment: str) -> str:
+        """
+        Overskriften: "Kundesegmentering – Item – Sinter".
+
+        Udsnittet står i selve overskriften frem for kun i undertitlen, så det
+        kan ses hvilket plot man har foran sig uden at læse med småt — også
+        når filen er sendt videre eller printet.
+        """
+        label = self.segment_label(segment).strip()
+        return f"{base} – {label}" if label else base
+
     def customer_type(self, value: object) -> str:
         return self.customer_types.get(str(value), str(value))
 
@@ -112,14 +135,16 @@ class Texts:
 DANISH = Texts(
     code="da",
     group_title="Kundesegmentering – Kundegruppe",
-    item_title="Kundesegmentering – Item scatter",
+    item_title="Kundesegmentering – Item",
     x_axis="Gross Margin (%)",
     group_y_axis="Samlet Turnover DKK ({months} mdr. vindue)",
     item_y_axis="Turnover DKK – item niveau ({months} mdr. vindue)",
     existing_customers="Eksisterende kunder: {start} – {end} ({months} mdr.)",
     turnover_window="Turnover-vindue: rullende {months} mdr. fra seneste aktivitet",
     edge_is_segment="Kant = Industry segment",
-    outliers_removed="Outliers fjernet (±{threshold} std)",
+    gm_limit_below="Frasorteret: GM% under {low} %",
+    gm_limit_above="Frasorteret: GM% over {high} %",
+    gm_limit_range="Frasorteret: GM% uden for {low}–{high} %",
     legend_title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
     category_group="Kategori {category}",
     no_category="Ingen kategori",
@@ -159,14 +184,16 @@ DANISH = Texts(
 ENGLISH = Texts(
     code="en",
     group_title="Customer segmentation – Customer group",
-    item_title="Customer segmentation – Item scatter",
+    item_title="Customer segmentation – Item",
     x_axis="Gross Margin (%)",
     group_y_axis="Total Turnover DKK ({months} month window)",
     item_y_axis="Turnover DKK – item level ({months} month window)",
     existing_customers="Existing customers: {start} – {end} ({months} months)",
     turnover_window="Turnover window: rolling {months} months from latest activity",
     edge_is_segment="Outline = Industry segment",
-    outliers_removed="Outliers removed (±{threshold} std)",
+    gm_limit_below="Filtered out: GM% below {low} %",
+    gm_limit_above="Filtered out: GM% above {high} %",
+    gm_limit_range="Filtered out: GM% outside {low}–{high} %",
     legend_title="Customers (click = show/hide one · button = whole block)",
     category_group="Category {category}",
     no_category="No category",

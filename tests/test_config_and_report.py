@@ -69,7 +69,7 @@ def test_gm_outside_zero_to_one_is_rejected():
     [
         ({"gm_months": 0}, "GM-måneder"),
         ({"turnover_window_months": 0}, "Turnover-vinduet"),
-        ({"outlier_metric": "vilkårlig"}, "Outlier-metrik"),
+        ({"gm_limit_min_pct": 100, "gm_limit_max_pct": -30}, "GM%-grænse"),
         ({"group_plot_anchor": "kunden"}, "Forankring"),
         ({"colour_by": "regnbue"}, "Farvelogik"),
         (
@@ -226,9 +226,14 @@ def test_the_item_sheet_keeps_kam_when_the_data_has_it():
 # --- Faste GM%-grænser -------------------------------------------------------
 
 
-def test_the_gm_limits_are_blank_by_default():
+def test_the_lower_gm_limit_defaults_to_minus_fifty():
+    """
+    Den fanger de rækker hvor omkostning og omsætning er landet i hver sin
+    måned, uden at røre ved varer der bare er solgt med tab.
+    """
     cfg = Config()
-    assert cfg.gm_limit_min_pct is None and cfg.gm_limit_max_pct is None
+    assert cfg.gm_limit_min_pct == -50.0
+    assert cfg.gm_limit_max_pct is None
     cfg.validate()
 
 
@@ -252,7 +257,7 @@ def test_the_limits_are_written_to_the_parameter_sheet():
 
 
 def test_a_blank_limit_says_so_in_the_parameter_sheet():
-    rows = parameter_sheet(Config(), DATES)
+    rows = parameter_sheet(Config(gm_limit_min_pct=None), DATES)
     values = dict(zip(rows["Parameter"], rows["Værdi"]))
     assert values["GM%-grænse, nedre"] == "ingen"
     assert values["GM%-grænse, øvre"] == "ingen"

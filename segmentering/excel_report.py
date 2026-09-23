@@ -25,7 +25,7 @@ from .metrics import (
     WINDOW_GROUP,
     WINDOW_ITEM,
 )
-from .outliers import GM_Z, OUTLIER_REASON, TURNOVER_Z
+from .outliers import OUTLIER_REASON
 
 Log = Callable[[str], None]
 
@@ -55,7 +55,7 @@ SUMMARY_COLUMNS: list[str] = [
     "seneste_aktivitet",
 ]
 
-#: Kolonnerne på item-fanerne. Outlier-fanen lægger z-scorerne foran.
+#: Kolonnerne på item-fanerne. Outlier-fanen lægger årsagen foran.
 ITEM_COLUMNS: list[str] = [
     GROUP,
     KAM,
@@ -110,13 +110,13 @@ def prepare_summary_sheet(per_group: pd.DataFrame, cfg: Config) -> pd.DataFrame:
 
 
 def prepare_item_sheet(
-    per_item: pd.DataFrame, cfg: Config, include_z_scores: bool = False
+    per_item: pd.DataFrame, cfg: Config, include_reason: bool = False
 ) -> pd.DataFrame:
     """
     Bygger en item-fane med læsbare kolonnenavne og en fast rækkefølge.
 
     Bruges til alle tre item-faner (alle, filtrerede og outliers), så de altid
-    ser ens ud.
+    ser ens ud. Outlier-fanen får årsagen med som anden kolonne.
     """
     months = cfg.turnover_window_months
     item_window = f"Turnover_DKK_{months}mdr_item"
@@ -129,30 +129,15 @@ def prepare_item_sheet(
             WINDOW_GROUP: group_window,
             GP_SUM: "GP_DKK_seneste_md",
             ITEM_GM: "GM_pct",
-            TURNOVER_Z: "z_score_Turnover",
-            GM_Z: "z_score_GM",
         }
     )
 
-    if include_z_scores:
-        preferred = [
-            GROUP,
-            ITEM_NO,
-            OUTLIER_REASON,
-            "z_score_Turnover",
-            "z_score_GM",
-            "Turnover_DKK_seneste_md",
-            item_window,
-            "GP_DKK_seneste_md",
-            "GM_pct",
-            FIRST_ACTIVITY,
-            LAST_ACTIVITY,
-        ]
-    else:
-        preferred = [
-            {"__item_window__": item_window, "__group_window__": group_window}.get(c, c)
-            for c in ITEM_COLUMNS
-        ]
+    preferred = [
+        {"__item_window__": item_window, "__group_window__": group_window}.get(c, c)
+        for c in ITEM_COLUMNS
+    ]
+    if include_reason:
+        preferred.insert(1, OUTLIER_REASON)
 
     items = items[[c for c in preferred if c in items.columns]]
     if item_window in items.columns:
@@ -176,9 +161,6 @@ def parameter_sheet(cfg: Config, dates) -> pd.DataFrame:
         ("Frasortering af døde items", cfg.drop_dead_items),
         ("Frasortering af budgettal efter dags dato", cfg.drop_future_periods),
         ("GM-måneder pr. item", cfg.gm_months),
-        ("Outlier-filter aktivt", cfg.remove_outliers),
-        ("Outlier-tærskel (std)", cfg.outlier_std_threshold),
-        ("Outlier metrik", cfg.outlier_metric),
         (
             "GM%-grænse, nedre",
             "ingen" if cfg.gm_limit_min_pct is None else f"{cfg.gm_limit_min_pct:g} %",
@@ -224,7 +206,7 @@ class ExcelReport:
         if outliers is not None and not outliers.empty:
             self.add(
                 sheet("Outliers"),
-                prepare_item_sheet(outliers, self.cfg, include_z_scores=True),
+                prepare_item_sheet(outliers, self.cfg, include_reason=True),
             )
 
     def _safe_name(self, name: str) -> str:

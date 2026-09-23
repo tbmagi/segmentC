@@ -185,9 +185,6 @@ class SegmenteringApp(tk.Tk):
         self.var_drop_zero = tk.BooleanVar()
         self.var_drop_dead_items = tk.BooleanVar()
 
-        self.var_remove_outliers = tk.BooleanVar()
-        self.var_outlier_std = tk.IntVar()
-        self.var_outlier_metric = tk.StringVar()
         self.var_gm_limit_min = tk.StringVar()
         self.var_gm_limit_max = tk.StringVar()
 
@@ -348,7 +345,6 @@ class SegmenteringApp(tk.Tk):
         ).pack(side="left", padx=8)
 
         self._update_gm_state()
-        self._update_outlier_state()
 
         def _closed() -> None:
             self._settings_window = None
@@ -494,69 +490,12 @@ class SegmenteringApp(tk.Tk):
         ttk.Separator(frame, orient="horizontal").grid(
             row=4, column=0, columnspan=3, sticky="ew", pady=6
         )
-        heading(frame, "Outlier-frasortering:").grid(
+        heading(frame, "GM%-grænser:").grid(
+
             row=5, column=0, columnspan=3, sticky="w", pady=(0, 1)
         )
-        ttk.Checkbutton(
-            frame,
-            text="Fjern outliers",
-            variable=self.var_remove_outliers,
-            command=self._update_outlier_state,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=3)
-        help_icon(
-            frame,
-            "Frasorterer ekstreme items inden for hver kundegruppe, inden de "
-            "lægges sammen til kundegruppe-niveau.\n\n"
-            "Z-score = (værdi − gennemsnit) / standardafvigelse. Items med "
-            "|z-score| over tærsklen fjernes.",
-        ).grid(row=6, column=2, sticky="w", padx=(0, 4))
-
-        outlier = ttk.Frame(frame)
-        outlier.grid(row=7, column=0, columnspan=3, sticky="ew", padx=(15, 0), pady=(0, 3))
-
-        self.label_outlier_std = ttk.Label(outlier, text="Tærskel (std):")
-        self.label_outlier_std.grid(row=0, column=0, sticky="w", pady=3)
-        self.combo_outlier_std = ttk.Combobox(
-            outlier, textvariable=self.var_outlier_std, width=5,
-            values=[1, 2, 3], state="readonly",
-        )
-        self.combo_outlier_std.grid(row=0, column=1, sticky="w", padx=5)
-        self.label_outlier_hint = ttk.Label(
-            outlier, text="1 = aggressiv · 2 = moderat · 3 = mild", foreground=HINT_COLOUR
-        )
-        self.label_outlier_hint.grid(row=0, column=2, sticky="w", padx=(0, 4))
-        help_icon(
-            outlier,
-            "Antal standardafvigelser for outlier-detektion:\n\n"
-            "  • 3  →  mild (kun ekstreme outliers fjernes)\n"
-            "  • 2  →  moderat (typisk valg)\n"
-            "  • 1  →  aggressiv",
-        ).grid(row=0, column=3, sticky="w", padx=(0, 4))
-
-        self.label_outlier_metric = ttk.Label(outlier, text="Metrik:")
-        self.label_outlier_metric.grid(row=1, column=0, sticky="w", pady=3)
-        self.combo_outlier_metric = ttk.Combobox(
-            outlier, textvariable=self.var_outlier_metric, width=12,
-            values=["begge", "turnover", "gm", "ingen"], state="readonly",
-        )
-        self.combo_outlier_metric.grid(row=1, column=1, sticky="w", padx=5)
-        help_icon(
-            outlier,
-            "Hvilke mål der udløser frasortering:\n\n"
-            "  • begge    : Turnover ELLER GM% er ekstrem\n"
-            "  • turnover : kun usædvanlig høj/lav omsætning\n"
-            "  • gm       : kun usædvanlig høj/lav margin\n"
-            "  • ingen    : ingen filtrering",
-        ).grid(row=1, column=2, sticky="w", padx=(0, 4))
-
-        ttk.Separator(frame, orient="horizontal").grid(
-            row=8, column=0, columnspan=3, sticky="ew", pady=6
-        )
-        heading(frame, "Faste GM%-grænser:").grid(
-            row=9, column=0, columnspan=3, sticky="w", pady=(0, 1)
-        )
         limits = ttk.Frame(frame)
-        limits.grid(row=10, column=0, columnspan=3, sticky="ew", padx=(15, 0), pady=(0, 3))
+        limits.grid(row=6, column=0, columnspan=3, sticky="ew", padx=(15, 0), pady=(0, 3))
 
         ttk.Label(limits, text="Frasortér hvis GM% er under:").grid(
             row=0, column=0, sticky="w", pady=3
@@ -575,18 +514,14 @@ class SegmenteringApp(tk.Tk):
         help_icon(
             limits,
             "Et fast spænd for GM% på item-niveau. Varer uden for spændet "
-            "frasorteres.\n\n"
+            "frasorteres, inden varerne lægges sammen til kundegruppe-niveau.\n\n"
             "Lad et felt stå TOMT for ingen grænse i den retning.\n\n"
-            "Grænserne er uafhængige af outlier-filteret ovenfor og virker "
-            "også når 'Fjern outliers' er slået fra.\n\n"
-            "Hvorfor de er nødvendige: z-scoren har et matematisk loft på "
-            "√(n−1), hvor n er kundens antal varer. Med tre varer kan ingen "
-            "af dem nogensinde nå over 1,41, og med tærskel 2 fjernes der "
-            "derfor ALDRIG noget hos en kunde med under seks varer — uanset "
-            "hvor vild marginen er. De faste grænser virker ved ethvert "
-            "antal varer.\n\n"
-            "Grænserne anvendes før z-scoren, så en ekstrem vare ikke får "
-            "lov at trække spredningen op og skjule de øvrige.\n\n"
+            "Standarden på -50 % fanger de rækker hvor omkostningen og "
+            "omsætningen er landet i hver sin måned — en kreditnota eller en "
+            "returvare — uden at røre ved varer der bare er solgt med tab.\n\n"
+            "En øvre grænse er også værd at overveje: en GM over 100 % "
+            "betyder at dækningsbidraget er større end omsætningen, hvilket "
+            "ikke kan lade sig gøre ved et normalt salg.\n\n"
             "Bemærk: en frasorteret vare tæller heller ikke med i kundens "
             "samlede omsætning og GM%. Ligger ALLE en kundes varer uden for "
             "spændet, beholdes de urørt, så kunden ikke forsvinder helt.",
@@ -594,7 +529,7 @@ class SegmenteringApp(tk.Tk):
 
         ttk.Label(
             limits,
-            text="tom = ingen grænse · fx -30 og 100",
+            text="tom = ingen grænse · fx -50 og 100",
             foreground=HINT_COLOUR,
         ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(0, 2))
 
@@ -945,9 +880,6 @@ class SegmenteringApp(tk.Tk):
         self.var_drop_zero.set(cfg.drop_zero_turnover)
         self.var_drop_dead_items.set(cfg.drop_dead_items)
 
-        self.var_remove_outliers.set(cfg.remove_outliers)
-        self.var_outlier_std.set(int(cfg.outlier_std_threshold))
-        self.var_outlier_metric.set(cfg.outlier_metric)
         self.var_gm_limit_min.set(_percent_text(cfg.gm_limit_min_pct))
         self.var_gm_limit_max.set(_percent_text(cfg.gm_limit_max_pct))
 
@@ -975,7 +907,6 @@ class SegmenteringApp(tk.Tk):
                 variable.set(format_band(band) if band else "")
 
         self._update_gm_state()
-        self._update_outlier_state()
 
     def _build_config(self) -> Config:
         """Læser skærmen til et ``Config``. Rejser ValueError ved ugyldige felter."""
@@ -1007,9 +938,6 @@ class SegmenteringApp(tk.Tk):
             excluded_turnover_types=split_list(self.var_excluded_turnover_types.get()),
             drop_zero_turnover=self.var_drop_zero.get(),
             drop_dead_items=self.var_drop_dead_items.get(),
-            remove_outliers=self.var_remove_outliers.get(),
-            outlier_std_threshold=float(self.var_outlier_std.get()),
-            outlier_metric=self.var_outlier_metric.get(),
             gm_limit_min_pct=_percent_value(self.var_gm_limit_min.get(), "under"),
             gm_limit_max_pct=_percent_value(self.var_gm_limit_max.get(), "over"),
             english_copy=self.var_english_copy.get(),
@@ -1049,20 +977,6 @@ class SegmenteringApp(tk.Tk):
         set_enabled(enabled, self.spin_gm_months)
         if enabled and self.var_gm_months.get() < 2:
             self.var_gm_months.set(3)
-
-    def _update_outlier_state(self) -> None:
-        if not self._widget_alive("combo_outlier_std"):
-            return
-        enabled = self.var_remove_outliers.get()
-        set_enabled(
-            enabled, self.combo_outlier_std, self.combo_outlier_metric, readonly=True
-        )
-        set_enabled(
-            enabled, self.label_outlier_std, self.label_outlier_metric
-        )
-        self.label_outlier_hint.configure(
-            foreground=HINT_COLOUR if enabled else "#aaa"
-        )
 
     # -- Fil-dialoger ---------------------------------------------------------
 

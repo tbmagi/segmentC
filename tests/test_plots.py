@@ -20,6 +20,7 @@ from segmentering.plots import (
     BUTTON_ROW_PX,
     OVERLAY_ROW_PX,
     PLOT_AREA_PX,
+    YScale,
     TOGGLE_GUARD,
     RESET_DIMENSION,
     RESET_LABEL,
@@ -635,3 +636,134 @@ def test_both_boxes_know_how_to_place_themselves():
         assert script and "updatemenu-header-group" in script
         assert "position:absolute" in script
         assert "plotly_afterplot" in script, "kassen flytter sig ikke med ved gentegning"
+
+
+# --- Negativ omsætning og symlog-aksen ---------------------------------------
+
+
+def test_a_plain_log_axis_when_everything_is_positive():
+    """Den almindelige situation skal se ud præcis som før."""
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert fig.layout.yaxis.type == "log"
+    assert not fig.layout.yaxis.tickvals
+
+
+def test_the_axis_turns_symmetric_when_something_is_not_positive():
+    data = groups_with_categories()
+    data.loc[0, "samlet_turnover_window"] = -250_000
+    fig = group_scatter(data, Config(), DATES)
+    assert fig.layout.yaxis.type == "linear", "log kan ikke vise negative tal"
+    assert fig.layout.yaxis.tickvals, "aksen mangler sine egne mærker"
+    assert "0" in list(fig.layout.yaxis.ticktext)
+    assert fig.layout.yaxis.zeroline, "uden nullinjen kan man ikke se hvor nul er"
+
+
+def test_the_negative_half_gets_its_own_labels():
+    """
+    Ligger de negative tal langt nok fra nul til at kunne læses, skal de
+    også have deres eget mærke — ellers kan man ikke se hvor meget minus.
+    """
+    data = items_with_dates()
+    data.loc[0, WINDOW_ITEM] = -80_000.0
+    data.loc[1, WINDOW_ITEM] = 300_000.0
+    data.loc[2, WINDOW_ITEM] = 900_000.0
+    fig = item_scatter(data, Config(), DATES)
+    labels = list(fig.layout.yaxis.ticktext)
+    assert any(t.startswith("-") for t in labels), labels
+
+
+def test_the_labels_do_not_pile_up_on_each_other():
+    """Inde i det lineære bælte ligger tallene tæt; de skal tyndes ud."""
+    data = items_with_dates()
+    data.loc[0, WINDOW_ITEM] = -80_000.0
+    fig = item_scatter(data, Config(), DATES)
+    positions = sorted(float(v) for v in fig.layout.yaxis.tickvals)
+    gaps = [b - a for a, b in zip(positions, positions[1:])]
+    assert all(g >= 0.149 for g in gaps), gaps
+
+
+def test_a_customer_with_negative_turnover_is_still_drawn():
+    data = groups_with_categories()
+    data.loc[0, "samlet_turnover_window"] = -250_000
+    fig = group_scatter(data, Config(), DATES)
+    assert len(fig.data) == len(data), "en kunde forsvandt"
+    assert min(t.y[0] for t in fig.data) < 0, "ingen punkter under nul"
+
+
+def test_items_with_zero_or_negative_turnover_are_drawn():
+    """
+    Før faldt de ud af plottet, fordi log10 af nul og negative tal ikke
+    findes. De tæller med i kundens tal, så de skal også kunne ses.
+    """
+    data = items_with_dates()
+    data.loc[0, WINDOW_ITEM] = -8_000.0
+    data.loc[1, WINDOW_ITEM] = 0.0
+    fig = item_scatter(data, Config(), DATES)
+    assert sum(len(t.y) for t in fig.data) == len(data)
+    assert fig.layout.yaxis.type == "linear"
+
+
+def test_an_item_without_a_turnover_is_still_left_out():
+    """Et manglende tal kan ikke placeres nogen steder."""
+    data = items_with_dates()
+    data.loc[0, WINDOW_ITEM] = float("nan")
+    fig = item_scatter(data, Config(), DATES)
+    assert sum(len(t.y) for t in fig.data) == len(data) - 1
+
+
+def test_the_hover_shows_kroner_not_the_axis_coordinate():
+    """
+    På symlog-aksen er punktets y-koordinat ikke beløbet. Læste hover stadig
+    y, ville der stå "-1,9 DKK" i stedet for "-8.000 DKK".
+    """
+    data = items_with_dates()
+    data.loc[0, WINDOW_ITEM] = -8_000.0
+    fig = item_scatter(data, Config(), DATES)
+    assert "%{customdata[2]:,.0f}" in fig.data[0].hovertemplate
+    assert "%{y" not in fig.data[0].hovertemplate
+    beløb = [row[2] for t in fig.data for row in t.customdata]
+    assert -8_000.0 in beløb
+
+    grupper = group_scatter(groups_with_categories(), Config(), DATES)
+    assert "%{customdata[0]:,.0f}" in grupper.data[0].hovertemplate
+    assert "%{y" not in grupper.data[0].hovertemplate
+
+
+def test_the_scale_is_continuous_where_the_two_halves_meet():
+    """Uden det ville kurven knække, og zonerne ramme ved siden af."""
+    scale = YScale(symmetric=True, threshold=1_000.0)
+    assert scale.point(1_000.0) == pytest.approx(scale.point(1_000.0001), abs=1e-4)
+    assert scale.point(0.0) == 0.0
+    assert scale.point(-500.0) == pytest.approx(-scale.point(500.0))
+    # En tierpotens skal fylde det samme hele vejen op
+    assert scale.point(100_000) - scale.point(10_000) == pytest.approx(1.0)
+    assert scale.point(-100_000) - scale.point(-10_000) == pytest.approx(-1.0)
+
+
+def test_the_scale_can_be_reversed():
+    scale = YScale(symmetric=True, threshold=1_000.0)
+    for value in (-250_000.0, -1_000.0, -400.0, 0.0, 400.0, 1_000.0, 250_000.0):
+        assert scale._from_axis(scale.point(value)) == pytest.approx(value)
+
+
+def test_the_linear_band_sits_at_the_smallest_positive_value():
+    """
+    Ét negativt punkt må ikke trække bæltet ned og give den negative halvdel
+    en urimelig del af aksen.
+    """
+    scale = YScale.for_values([-8_000.0, 20_000.0, 900_000.0])
+    assert scale.threshold == 10_000.0
+    assert abs(scale.point(-8_000.0)) < 1.0, "det negative punkt er i det lineære bælte"
+
+
+def test_the_zones_follow_the_same_scale_as_the_points():
+    """
+    Zonerne er angivet i kroner. Blev de ikke regnet om, ville A-zonen ligge
+    ved akseværdien 5.000.000 og altså langt uden for billedet.
+    """
+    data = groups_with_categories()
+    data.loc[0, "samlet_turnover_window"] = -250_000
+    fig = group_scatter(data, Config(), DATES)
+    kanter = [s.y0 for s in fig.layout.shapes if s.y0 is not None]
+    assert kanter, "ingen zoner"
+    assert all(-20 < float(v) < 20 for v in kanter), kanter

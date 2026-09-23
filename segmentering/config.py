@@ -27,7 +27,6 @@ from typing import Iterable, Literal, Mapping, Sequence
 #:   "item"  -> N måneder bagud fra HVERT ITEMS egen seneste aktivitet.
 Anchor = Literal["group", "item"]
 
-OutlierMetric = Literal["begge", "turnover", "gm", "ingen"]
 ColourBy = Literal["kundetype", "industry_segment"]
 
 TDKK = 1_000  # tabel-referencerne nedenfor er i tusinde DKK
@@ -334,20 +333,14 @@ class Config:
     #: Slås den fra, indgår budgetrækker i beregningen som var de realiseret.
     drop_future_periods: bool = True
 
-    # Outliers
-    remove_outliers: bool = True
-    outlier_std_threshold: float = 2.0
-    outlier_metric: OutlierMetric = "gm"
-
-    #: Fast spænd for GM% i procent. Varer uden for spændet frasorteres
-    #: uanset hvad de øvrige varer hos kunden gør, og uanset hvor få varer
-    #: kunden har. ``None`` = ingen grænse i den retning.
+    # Frasortering af varer med urimelig margin
+    #: Fast spænd for GM% i procent. Varer uden for spændet frasorteres.
+    #: ``None`` = ingen grænse i den retning.
     #:
-    #: Grænserne er uafhængige af z-score-filteret ovenfor: de virker også
-    #: når 'Fjern outliers' er slået fra. Z-scoren har et matematisk loft på
-    #: √(n−1) og kan derfor aldrig nå tærskel 2 hos en kunde med under seks
-    #: varer — det er netop de kunder grænserne dækker.
-    gm_limit_min_pct: float | None = None
+    #: Standarden på −50 % fanger de rækker hvor omkostningen og omsætningen
+    #: er landet i hver sin måned — en kreditnota eller en returvare — uden
+    #: at røre ved varer der bare er solgt med tab.
+    gm_limit_min_pct: float | None = -50.0
     gm_limit_max_pct: float | None = None
 
     # Opdeling af plots
@@ -438,11 +431,6 @@ class Config:
                 "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅ, fx 2026/27. "
                 f"Fik: {self.new_fiscal_year!r}"
             )
-        if self.outlier_metric not in ("begge", "turnover", "gm", "ingen"):
-            raise ValueError(
-                "Outlier-metrik skal være 'begge', 'turnover', 'gm' eller "
-                f"'ingen', fik: {self.outlier_metric!r}"
-            )
         for label, value in (
             ("Nedre GM%-grænse", self.gm_limit_min_pct),
             ("Øvre GM%-grænse", self.gm_limit_max_pct),
@@ -492,7 +480,14 @@ DATE_DERIVED_FIELDS = ("reference_date", "new_fiscal_year")
 #: over i stedet for at blive afvist som ukendte: ellers ville en gemt fil
 #: fra en tidligere version pludselig give en fejl ved opstart, og brugerens
 #: øvrige standardværdier ville gå tabt sammen med den.
-RETIRED_FIELDS = ("x_scale", "y_scale", "excel_detail")
+RETIRED_FIELDS = (
+    "x_scale",
+    "y_scale",
+    "excel_detail",
+    "remove_outliers",
+    "outlier_std_threshold",
+    "outlier_metric",
+)
 
 
 def settings_path() -> str:

@@ -235,17 +235,13 @@ def analyse_segment(
 
     per_item_filtered: pd.DataFrame | None = None
     outliers: pd.DataFrame | None = None
-    # De faste GM%-grænser er uafhængige af z-score-filteret og virker også
-    # når 'Fjern outliers' er slået fra.
     has_gm_limits = (
         cfg.gm_limit_min_pct is not None or cfg.gm_limit_max_pct is not None
     )
-    if cfg.remove_outliers or has_gm_limits:
-        log(f"\n[{segment.label}] Frasorterer ekstreme items:")
+    if has_gm_limits:
+        log(f"\n[{segment.label}] Frasorterer varer med urimelig margin:")
         split = filter_outliers(
             per_item,
-            cfg.outlier_std_threshold,
-            cfg.outlier_metric if cfg.remove_outliers else "ingen",
             log,
             gm_limit_min_pct=cfg.gm_limit_min_pct,
             gm_limit_max_pct=cfg.gm_limit_max_pct,
@@ -275,8 +271,8 @@ def analyse_segment(
 
 
 def _plot_title(result: SegmentResult, cfg: Config) -> str:
-    if cfg.remove_outliers:
-        return f"{result.segment.label} - Outliers fjernet (±{cfg.outlier_std_threshold} std)"
+    """Udsnittets navn, som kommer til at stå i plottets overskrift."""
+    _ = cfg
     return result.segment.label
 
 

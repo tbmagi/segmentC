@@ -90,11 +90,11 @@ def test_an_explicit_folder_still_wins():
 
 def test_saved_settings_come_back(tmp_path):
     path = str(tmp_path / "indstillinger.json")
-    cfg = Config(turnover_window_months=24, outlier_metric="turnover", gm_months=3)
+    cfg = Config(turnover_window_months=24, gm_limit_min_pct=-30, gm_months=3)
     save_defaults(cfg, path)
     restored = load_defaults(path)
     assert restored.turnover_window_months == 24
-    assert restored.outlier_metric == "turnover"
+    assert restored.gm_limit_min_pct == -30
     assert restored.gm_months == 3
 
 
@@ -163,3 +163,27 @@ def test_clearing_reports_whether_there_was_anything(tmp_path):
     save_defaults(Config(), path)
     assert clear_defaults(path) is True
     assert not os.path.exists(path)
+
+
+def test_an_old_settings_file_still_loads(tmp_path):
+    """
+    Z-score-indstillingerne er taget ud af programmet. En gemt fil fra en
+    tidligere version må ikke give en fejl ved opstart — så ville brugerens
+    øvrige standardværdier gå tabt sammen med dem.
+    """
+    path = tmp_path / "indstillinger.json"
+    path.write_text(
+        json.dumps(
+            {
+                "turnover_window_months": 18,
+                "remove_outliers": True,
+                "outlier_std_threshold": 2.0,
+                "outlier_metric": "gm",
+                "x_scale": "linear",
+            }
+        ),
+        encoding="utf-8",
+    )
+    restored = load_defaults(str(path))
+    assert restored.turnover_window_months == 18
+    assert not hasattr(restored, "outlier_metric")

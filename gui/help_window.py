@@ -269,63 +269,38 @@ HELP_CONTENT: list[Block] = [
         "den måned varen sidst blev solgt til den kunde.\n\n",
     ),
 
-    (HEADING, "Trin 7: Outlier-filter (valgfrit)\n"),
+    (HEADING, "Trin 7: GM%-grænser\n"),
     (
         BODY,
-        "Når 'Fjern outliers' er slået til, fjernes items der afviger markant "
-        "fra normalen inden for samme kundegruppe, inden de lægges sammen til "
-        "kundegruppe-niveau. For hvert item beregnes en z-score = "
-        "(værdi − snit) / standardafvigelse, og items over tærsklen droppes.\n\n",
-    ),
-    (
-        TABLE,
-        "    3  →  mild filtrering (kun ekstreme outliers)\n"
-        "    2  →  moderat (typisk valg)\n"
-        "    1  →  aggressiv\n\n",
+        "Varer hvis margin ligger uden for et fast spænd frasorteres, inden "
+        "varerne lægges sammen til kundegruppe-niveau. Standarden er under "
+        "-50 %, og der er ingen øvre grænse. Et tomt felt betyder ingen "
+        "grænse i den retning.\n\n"
+        "Den nedre standard fanger de rækker hvor omkostningen og "
+        "omsætningen er landet i hver sin måned — en kreditnota eller en "
+        "returvare — uden at røre ved varer der bare er solgt med tab. En "
+        "øvre grænse omkring 100 % er værd at overveje: en GM over 100 % "
+        "betyder at dækningsbidraget er større end omsætningen, hvilket ikke "
+        "kan lade sig gøre ved et normalt salg.\n\n",
     ),
     (
         NOTE,
-        "En kundegruppe med kun ét item filtreres aldrig, og en gruppe hvor "
-        "alle items ser ekstreme ud beholdes urørt frem for at forsvinde.\n\n",
-    ),
-    (
-        BODY,
-        "Z-scoren har en begrænsning det er værd at kende: den største score "
-        "der overhovedet kan opstå hos en kunde med n varer er kvadratroden "
-        "af (n-1). Med tre varer kan ingen af dem nå over 1,41, og med "
-        "tærskel 2 fjernes der derfor ALDRIG noget hos en kunde med under "
-        "seks varer — uanset hvor vild marginen er.\n\n"
-        "Grunden er at varen selv er med til at bestemme det målebånd den "
-        "måles med. En margin på -1014 % blandt tre varer trækker "
-        "gennemsnittet ned til -307 % og spredningen op på 500 procentpoint, "
-        "og målt mod dét ligger varen kun 1,4 spredninger fra midten.\n\n",
-    ),
-
-    (HEADING, "Trin 7b: Faste GM%-grænser\n"),
-    (
-        BODY,
-        "Grænserne dækker netop det hul. De frasorterer varer hvis margin "
-        "ligger uden for et fast spænd, og de virker ved ethvert antal varer "
-        "— også hos en kunde med to. Et tomt felt betyder ingen grænse i den "
-        "retning, så man kan nøjes med en nedre, en øvre eller begge.\n\n"
-        "Grænserne anvendes FØR z-scoren, så en vild vare ikke får lov at "
-        "trække spredningen op og skjule de øvrige afvigere. De virker også "
-        "når 'Fjern outliers' er slået helt fra.\n\n",
-    ),
-    (
-        NOTE,
-        "Begge mekanismer fjerner varen fra grafen OG fra kundens samlede "
-        "tal — en frasorteret vare tæller ikke med i kundens omsætning eller "
+        "En frasorteret vare tæller IKKE med i kundens omsætning, GP eller "
         "GM%. Ligger alle en kundes varer uden for spændet, beholdes de "
         "urørt, så kunden ikke forsvinder helt ud af analysen. De fjernede "
         "varer står på Excel-fanen 'Outliers' med en årsag.\n\n",
     ),
 
     (NOTE,
-     "Akserne er faste: X er lineær og Y logaritmisk. GM% læses som "
-     "procentpoint, mens omsætningen spænder over flere størrelsesordener — "
-     "på en lineær akse ville alt andet end de største kunder klumpe sammen "
-     "nede ved nul.\n\n"),
+     "Y-aksen er logaritmisk, fordi omsætningen spænder over flere "
+     "størrelsesordener — på en lineær akse ville alt andet end de største "
+     "kunder klumpe sammen nede ved nul. X-aksen er lineær, fordi GM% ligger "
+     "inden for et snævert interval og læses som procentpoint.\n\n"
+     "En logaritmisk akse kan ikke vise nul eller negative tal. Er der "
+     "kunder eller varer med negativ omsætning — kreditnotaer, returvarer — "
+     "skifter y-aksen derfor til symlog: logaritmisk i begge retninger, med "
+     "et lineært bælte omkring nul. Så kan de også ses, i stedet for at "
+     "falde ud af plottet. Hover viser altid kroner.\n\n"),
 
     (HEADING, "Trin 8: Plots og Excel-rapport\n"),
     (

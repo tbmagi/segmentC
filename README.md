@@ -126,9 +126,8 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
    summeret hvis vægtet GM% er slået til.
 5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
    seneste aktivitet. De to plots kan have hver sin forankring.
-6. **Frasortering af ekstreme items** – to uafhængige mekanismer:
-   et valgfrit z-score-filter inden for hver kundegruppe, og et fast
-   GM%-spænd der gælder uanset hvor få varer kunden har.
+6. **GM%-grænser** – varer hvis margin ligger uden for et fast spænd
+   frasorteres. Standarden er under −50 %.
 7. **Kundekategori** – A/B/C/D ud fra turnover-båndet, med `+`/`-` alt efter om
    GM% når kategoriens krav.
 8. **KAM** – kunden tildeles den key account manager der står på den seneste
@@ -148,10 +147,10 @@ knapperne under plottet slår en hel blok fra:
 | Kundegruppe | én kundegruppe | kundenavne pr. kategori | kundetype |
 | Item | ét item no. | kundenavne pr. kategori | kundegruppe |
 
-Akserne er faste: **X lineær, Y logaritmisk.** GM% ligger inden for et snævert
-interval og læses som procentpoint; omsætningen spænder over flere
-størrelsesordener, og på en lineær akse ville alt andet end de største kunder
-klumpe sammen nede ved nul.
+Akserne er faste: **X lineær, Y logaritmisk** — og symlog hvis der er nuller
+eller negative tal at vise. GM% ligger inden for et snævert interval og læses
+som procentpoint; omsætningen spænder over flere størrelsesordener, og på en
+lineær akse ville alt andet end de største kunder klumpe sammen nede ved nul.
 
 Knaprækkerne under kundegruppe-plottet er kundetype, kategori, KAM og
 branche. Under item-plottet er de volumenkrav, kategori og KAM.
@@ -196,62 +195,63 @@ filterknap, beregnes synligheden forfra ud fra knapperne alene.
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.
 
-## Frasortering af ekstreme items
+## GM%-grænser
 
-Der er to uafhængige mekanismer. Begge fjerner varen fra grafen **og** fra
-kundens samlede tal — en frasorteret vare tæller ikke med i kundens omsætning,
-GP eller GM%. De fjernede varer står på Excel-fanen `Outliers` med en årsag,
-så det kan efterprøves.
+Varer hvis margin ligger uden for et fast spænd frasorteres, inden varerne
+lægges sammen til kundegruppe-niveau. Standarden er **under −50 %**, og der er
+ingen øvre grænse. Et tomt felt betyder ingen grænse i den retning.
 
-**Z-score** (`Fjern outliers`) måler hver vare mod kundens øvrige varer:
-`z = (værdi − gennemsnit) / spredning`, og varer over tærsklen ryger ud.
+Den nedre standard fanger de rækker hvor omkostningen og omsætningen er landet
+i hver sin måned — en kreditnota eller en returvare — uden at røre ved varer
+der bare er solgt med tab. En øvre grænse omkring 100 % er værd at overveje:
+en GM over 100 % betyder at dækningsbidraget er større end omsætningen, hvilket
+ikke kan lade sig gøre ved et normalt salg.
 
-Den har en begrænsning det er værd at kende. Den største z-score der
-overhovedet kan opstå i en gruppe med `n` varer er `√(n−1)`:
+En frasorteret vare tæller **ikke** med i kundens omsætning, GP eller GM%. De
+fjernede varer står på Excel-fanen `Outliers` med en årsag, så det kan
+efterprøves. Ligger *alle* en kundes varer uden for spændet, beholdes de urørt:
+ellers ville kunden forsvinde helt ud af analysen, også ud af sin egen
+omsætning. Det siges i fremdriftsteksten når det sker.
 
-| Antal varer | Største mulige \|z\| |
-| --- | --- |
-| 2 | 1,00 |
-| 3 | 1,41 |
-| 4 | 1,73 |
-| 5 | 2,00 |
-| 6 | 2,24 |
+> Der var tidligere også et z-score-filter, der målte hver vare mod kundens
+> øvrige varer. Det er taget ud. Den største z-score der overhovedet kan opstå
+> i en gruppe med `n` varer er `√(n−1)` — med tre varer altså 1,41 — så med
+> tærskel 2 fjernede det aldrig noget hos en kunde med under seks varer,
+> uanset hvor vild marginen var. Varen var selv med til at bestemme det
+> målebånd den blev målt med, og langt de fleste af vores kunder har under
+> seks varer. Gamle indstillingsfiler med de felter indlæses stadig; felterne
+> springes bare over.
 
-Med tærskel 2 fjernes der derfor **aldrig** noget hos en kunde med under seks
-varer, uanset hvor ekstrem varen er. Årsagen er at varen selv er med til at
-bestemme gennemsnittet og spredningen: en margin på −1014 % blandt tre varer
-trækker gennemsnittet ned til −307 % og spredningen op på 500 procentpoint, og
-målt mod dét ligger varen kun 1,4 spredninger fra midten.
+## Y-aksen: log, og symlog når der er negative tal
 
-**Faste GM%-grænser** dækker netop det hul. De frasorterer varer hvis margin
-ligger uden for et spænd, og de virker ved ethvert antal varer — også hos en
-kunde med to. Et tomt felt betyder ingen grænse i den retning, så man kan
-nøjes med en nedre, en øvre eller begge.
+Y-aksen er logaritmisk, fordi omsætningen spænder over flere størrelsesordener.
+En logaritmisk akse kan bare ikke vise nul eller negative tal — `log10` af dem
+findes ikke — og kunder og varer med negativ omsætning forsvandt derfor fra
+plottet.
 
-Grænserne anvendes **før** z-scoren, så en vild vare ikke får lov at trække
-spredningen op og skjule de øvrige afvigere. De virker også når `Fjern
-outliers` er slået helt fra.
+Er der nuller eller negative tal at vise, skifter y-aksen derfor til
+**symlog**: logaritmisk i begge retninger, med et lineært bælte omkring nul.
+Plotly har ingen symlog-akse, så tallene regnes om inden de tegnes, og aksen
+sættes til lineær med mærker der står ved de rigtige kronebeløb:
 
-Ligger *alle* en kundes varer uden for spændet, beholdes de urørt: ellers
-ville kunden forsvinde helt ud af analysen, også ud af sin egen omsætning.
-Det siges i fremdriftsteksten når det sker.
+```
+|v| <= C :   L · v / C                    (lineær omkring nul)
+|v| >  C :   sign(v) · (L + log10(|v|/C))
+```
 
-## Hvorfor mangler en vare på item-plottet?
+`C` lægges ved den mindste positive værdi der skal vises, så det lineære bælte
+dækker netop det uinteressante område omkring nul. `L` (0,5) bestemmer hvor
+meget lodret plads bæltet får — uden den ville hullet omkring nul fylde en hel
+tierpotens i hver retning.
 
-Y-aksen er logaritmisk, og logaritmen af nul eller et negativt tal findes
-ikke. Varer med **nul eller negativ turnover i vinduet** kan derfor ikke
-tegnes og udelades fra item-plottet.
-
-Det er udelukkende et tegne-forbehold. Varen indgår fuldt ud i alt andet:
-
-- kundens samlede omsætning, GP og GM%
-- kundens kategori og dens placering på kundegruppe-plottet
-- antal items
-- Excel-fanerne `Items_alle` og `Items_filt`
+Er alt positivt, bruges en almindelig logaritmisk akse som før. Hover viser
+altid kroner: på symlog-aksen er punktets koordinat ikke beløbet, så beløbet
+følger med som data.
 
 Bemærk at `Fjern rækker med Turnover = 0` kun fjerner rækker der er **præcis**
 nul. Negative rækker — kreditnotaer, returvarer — bliver stående med vilje, så
-de stadig tælles med i kundens tal.
+de tælles med i kundens tal og nu også kan ses på plottet. Kun varer helt uden
+et tal udelades, for de kan ikke placeres nogen steder.
 
 ## Udsnit og filnavne
 
@@ -334,7 +334,7 @@ segmentering/          beregningen – kan bruges helt uden brugerflade
   dataio.py            indlæsning, kolonne-normalisering, rækkefiltre
   classify.py          item-type, kundetype, kundekategori
   metrics.py           GM%-grundlag, turnover-vindue, aggregering
-  outliers.py          z-score-filter pr. kundegruppe
+  outliers.py          GM%-grænser pr. vare
   plots.py             Plotly-figurerne
   language.py          grafernes tekster på dansk og engelsk
   excel_report.py      rapportens faneblade og formatering

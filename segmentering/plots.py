@@ -13,6 +13,7 @@ Begge gemmes som selvstændige HTML-filer der kan åbnes i en browser.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
 import numpy as np
@@ -223,6 +224,7 @@ def band_shapes(
     fill_opacity: float,
     label_zones: bool,
     label_of: Callable[[object], str] = str,
+    scale: "YScale | None" = None,
 ) -> tuple[list[dict], list[dict]]:
     """
     Bygger Plotly-shapes og -annotationer for et sæt bånd.
@@ -236,12 +238,18 @@ def band_shapes(
     """
     shapes: list[dict] = []
     annotations: list[dict] = []
+    # Zonerne er angivet i kroner, men tegnes i aksens koordinater. På en
+    # symlog-akse er de to ting ikke det samme, så de skal omregnes med
+    # nøjagtig den samme funktion som punkterne.
+    on_axis = scale.point if scale is not None else (lambda v: v)
 
     for name, band in bands.items():
         colour = colours.get(name, "#aaaaaa")
         x0 = band.gm_min * 100
-        y0 = band.turnover_min
-        y1 = band.turnover_max if band.turnover_max is not None else Y_MAX_ZONE
+        y0 = on_axis(band.turnover_min)
+        y1 = on_axis(
+            band.turnover_max if band.turnover_max is not None else Y_MAX_ZONE
+        )
         shapes.append(
             dict(
                 type="rect",
@@ -319,8 +327,8 @@ def band_shapes(
                 yref="y",
                 x0=0,
                 x1=1,
-                y0=y_value,
-                y1=y_value,
+                y0=on_axis(y_value),
+                y1=on_axis(y_value),
                 line=dict(color="grey", width=1, dash="dash"),
                 opacity=0.6,
                 layer="below",
@@ -329,7 +337,7 @@ def band_shapes(
         annotations.append(
             dict(
                 x=1.0,
-                y=y_value,
+                y=on_axis(y_value),
                 xref="paper",
                 yref="y",
                 text=_danish_thousands(y_value),
@@ -1003,14 +1011,20 @@ def flow_button_menus(
     return menus, rows
 
 
-def category_zone_shapes(cfg: Config) -> tuple[list[dict], list[dict]]:
+def category_zone_shapes(
+    cfg: Config, scale: "YScale | None" = None
+) -> tuple[list[dict], list[dict]]:
     return band_shapes(
-        cfg.category_bands, CATEGORY_COLOURS, fill_opacity=0.08, label_zones=False
+        cfg.category_bands,
+        CATEGORY_COLOURS,
+        fill_opacity=0.08,
+        label_zones=False,
+        scale=scale,
     )
 
 
 def volume_zone_shapes(
-    level: str, cfg: Config, texts: Texts = DANISH
+    level: str, cfg: Config, texts: Texts = DANISH, scale: "YScale | None" = None
 ) -> tuple[list[dict], list[dict]]:
     return band_shapes(
         cfg.volume_zones.get(level, {}),
@@ -1018,6 +1032,7 @@ def volume_zone_shapes(
         fill_opacity=0.10,
         label_zones=True,
         label_of=texts.volume_zone,
+        scale=scale,
     )
 
 
@@ -1035,9 +1050,183 @@ def _subtitle(
         ),
         texts.turnover_window.format(months=cfg.turnover_window_months),
     ]
+    # Grafen bliver sendt videre uden Excel-rapporten, så det skal kunne ses
+    # på figuren selv at noget er sorteret fra.
+    note = texts.gm_limit_note(cfg.gm_limit_min_pct, cfg.gm_limit_max_pct)
+    if note:
+        parts.append(note)
     if extra:
         parts.append(extra)
     return "  |  ".join(parts)
+
+
+#: Mindste bredde af det lineære bælte omkring nul, i kroner.
+SYMLOG_MIN_THRESHOLD = 1_000.0
+
+#: Hvilke tal der får et mærke på y-aksen inden for hver tierpotens.
+SYMLOG_TICK_MULTIPLIERS = (1, 2, 5)
+
+#: Hvor meget lodret plads det lineære bælte omkring nul får, målt i
+#: tierpotenser. 0,5 betyder at strækningen fra 0 op til bæltets kant fylder
+#: det halve af en tierpotens. Uden den ville bæltet fylde en hel potens i
+#: hver retning, og så stod der et stort tomt hul omkring nul hvor der sjældent
+#: er noget at se.
+SYMLOG_LINEAR_SCALE = 0.5
+
+#: Mindste afstand mellem to mærker på y-aksen, i tierpotenser. Mærkerne
+#: uden for det lineære bælte ligger mindst 0,30 fra hinanden (log10 af 2),
+#: så det er kun inde i bæltet der tyndes ud.
+SYMLOG_MIN_TICK_GAP = 0.15
+
+
+@dataclass(frozen=True)
+class YScale:
+    """
+    Y-aksens skala. Enten almindelig log, eller symlog hvis der er nuller
+    eller negative tal at vise.
+
+    En logaritmisk akse kan ikke vise nul eller negative tal — ``log10`` af
+    dem findes ikke — og varer med negativ omsætning (kreditnotaer,
+    returvarer) forsvandt derfor fra item-plottet. Plotly har ingen indbygget
+    symlog-akse, så den laves her: data omregnes selv, og aksen sættes til
+    lineær med mærker der står ved de rigtige kronebeløb.
+
+    Omregningen er, med ``L = SYMLOG_LINEAR_SCALE``::
+
+        |v| <= C :   L * v / C                      (lineær omkring nul)
+        |v| >  C :   sign(v) * (L + log10(|v|/C))
+
+    De to stykker mødes i ``|v| = C``, hvor begge giver ``L``, så kurven ikke
+    knækker. ``C`` lægges ved den mindste positive værdi der skal vises, så
+    det lineære bælte dækker netop det uinteressante område omkring nul og
+    ikke klemmer de rigtige tal sammen.
+    """
+
+    symmetric: bool
+    threshold: float = SYMLOG_MIN_THRESHOLD
+
+    @classmethod
+    def for_values(cls, values: Sequence[float]) -> "YScale":
+        numbers = _finite(values)
+        if not numbers or all(v > 0 for v in numbers):
+            return cls(symmetric=False)
+        # Bæltet lægges ved den mindste POSITIVE værdi, ikke ved den mindste
+        # af alle. Ellers kunne ét enkelt negativt punkt trække bæltet ned og
+        # give den negative halvdel en tredjedel af aksen for sin egen skyld.
+        positive = [v for v in numbers if v > 0]
+        reference = min(positive) if positive else min(abs(v) for v in numbers if v)
+        decade = 10.0 ** np.floor(np.log10(reference))
+        return cls(symmetric=True, threshold=max(decade, SYMLOG_MIN_THRESHOLD))
+
+    def to_axis(self, values: Sequence[float] | pd.Series) -> np.ndarray:
+        """Omregner data til den koordinat punktet tegnes ved."""
+        array = np.asarray(values, dtype=float)
+        if not self.symmetric:
+            return array
+        magnitude = np.abs(array)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            far = np.sign(array) * (
+                SYMLOG_LINEAR_SCALE + np.log10(magnitude / self.threshold)
+            )
+        near = SYMLOG_LINEAR_SCALE * array / self.threshold
+        return np.where(magnitude <= self.threshold, near, far)
+
+    def point(self, value: float) -> float:
+        """Samme omregning for et enkelt tal — til zoner og referencelinjer."""
+        return float(self.to_axis([value])[0])
+
+    def _ticks(self, numbers: Sequence[float]) -> tuple[list[float], list[str]]:
+        """
+        Mærkerne på aksen: pæne kronebeløb, spredt som på en log-akse.
+
+        Der laves også kandidater et par tierpotenser under det lineære
+        bælte, så et lille negativt tal ikke ender uden et mærke i nærheden.
+        Inde i bæltet ligger tallene lineært og kan derfor komme til at stå
+        oven i hinanden, så mærkerne tyndes ud til sidst.
+        """
+        biggest = max((abs(v) for v in numbers), default=self.threshold)
+        top = int(np.ceil(np.log10(max(biggest, self.threshold)))) + 1
+        start = int(np.floor(np.log10(self.threshold))) - 2
+
+        wanted = {0.0}
+        for power in range(start, top + 1):
+            for multiplier in SYMLOG_TICK_MULTIPLIERS:
+                value = multiplier * 10.0**power
+                wanted.update((value, -value))
+
+        low, high = min(numbers), max(numbers)
+        inside = sorted(v for v in wanted if low <= v <= high)
+        kept = self._thin_out(inside)
+        return [self.point(v) for v in kept], [f"{v:,.0f}" for v in kept]
+
+    def _thin_out(self, values: Sequence[float]) -> list[float]:
+        """
+        Fjerner mærker der ville stå oven i hinanden.
+
+        Der arbejdes udad fra nul i begge retninger, så nulpunktet altid
+        beholdes og det er de tætte naboer der ryger.
+        """
+        has_zero = any(v == 0 for v in values)
+        kept: list[float] = [0.0] if has_zero else []
+        for side in (
+            sorted(v for v in values if v > 0),
+            sorted((v for v in values if v < 0), reverse=True),
+        ):
+            # Nulpunktet er allerede sat, så de to halvdele måles begge fra
+            # nul og ud. Ellers beholdt hver side sit første mærke uanset
+            # hvor tæt på nul det lå, og de to endte oven i hinanden.
+            last: float | None = 0.0 if has_zero else None
+            for value in side:
+                position = self.point(value)
+                if last is None or abs(position - last) >= SYMLOG_MIN_TICK_GAP:
+                    kept.append(value)
+                    last = position
+        return sorted(kept)
+
+    def axis_dict(self, title: str, values: Sequence[float]) -> dict:
+        """Hele y-aksen, klar til ``update_layout``."""
+        axis = dict(title=title, gridcolor=GRID_COLOUR)
+        if not self.symmetric:
+            axis.update(type="log", tickformat=",.0f")
+            span = axis_range(values, log=True)
+            if span:
+                axis["range"] = span
+            return axis
+
+        numbers = _finite(values)
+        axis["type"] = "linear"
+        if not numbers:
+            return axis
+        # Mærkerne skal dække hele aksen, også den luft der lægges til, så
+        # de beregnes på et interval der er strakt lige så meget som aksen.
+        span = axis_range(self.to_axis(numbers), log=False)
+        if span:
+            axis["range"] = span
+            edges = [self._from_axis(span[0]), self._from_axis(span[1])]
+        else:
+            edges = [min(numbers), max(numbers)]
+        tickvals, ticktext = self._ticks(edges)
+        axis.update(tickvals=tickvals, ticktext=ticktext, zeroline=True,
+                    zerolinecolor="#999999", zerolinewidth=1)
+        return axis
+
+    def _from_axis(self, position: float) -> float:
+        """Den omvendte vej: fra koordinat tilbage til kroner."""
+        if not self.symmetric:
+            return position
+        if abs(position) <= SYMLOG_LINEAR_SCALE:
+            return position * self.threshold / SYMLOG_LINEAR_SCALE
+        return float(
+            np.sign(position)
+            * self.threshold
+            * 10.0 ** (abs(position) - SYMLOG_LINEAR_SCALE)
+        )
+
+
+def _finite(values: Sequence[float]) -> list[float]:
+    return [
+        float(v) for v in values if v is not None and not pd.isna(v) and np.isfinite(v)
+    ]
 
 
 def axis_range(values: Sequence[float], log: bool, pad: float = 0.06) -> list[float] | None:
@@ -1054,9 +1243,7 @@ def axis_range(values: Sequence[float], log: bool, pad: float = 0.06) -> list[fl
     negative værdier må udelades: ``log10(0)`` er minus uendelig og ville
     trække aksen ned i det meningsløse.
     """
-    numbers = [
-        float(v) for v in values if v is not None and not pd.isna(v) and np.isfinite(v)
-    ]
+    numbers = _finite(values)
     if log:
         numbers = [v for v in numbers if v > 0]
     if not numbers:
@@ -1078,15 +1265,21 @@ def _axes(
     x_values: Sequence[float] = (),
     y_values: Sequence[float] = (),
     texts: Texts = DANISH,
+    scale: "YScale | None" = None,
 ) -> dict:
     """
-    Akserne. Skalaen er fast: X lineær, Y logaritmisk.
+    Akserne. X er altid lineær, Y altid logaritmisk.
 
     Gross Margin % ligger inden for et snævert interval og skal læses som
     procentpoint, så den hører hjemme på en lineær akse. Omsætningen spænder
     derimod over flere størrelsesordener — fra små tusinder til mange
     millioner — og på en lineær akse ville alt andet end de største kunder
     klumpe sammen nede ved nul.
+
+    Er der nuller eller negative tal at vise, bliver y-aksen symlog i stedet
+    (se ``YScale``). ``y_values`` er altid de rå kronebeløb — omregningen
+    sker inde i skalaen — og ``scale`` skal være den samme som punkterne
+    blev tegnet med.
     """
     _ = cfg  # akserne afhænger ikke længere af indstillinger
     x_axis = dict(
@@ -1094,18 +1287,12 @@ def _axes(
         type="linear",
         gridcolor=GRID_COLOUR,
     )
-    y_axis = dict(
-        title=y_title,
-        type="log",
-        tickformat=",.0f",
-        gridcolor=GRID_COLOUR,
-    )
+    if scale is None:
+        scale = YScale.for_values(y_values)
+    y_axis = scale.axis_dict(y_title, y_values)
     x_range = axis_range(x_values, log=False)
-    y_range = axis_range(y_values, log=True)
     if x_range:
         x_axis["range"] = x_range
-    if y_range:
-        y_axis["range"] = y_range
     return dict(xaxis=x_axis, yaxis=y_axis)
 
 
@@ -1157,6 +1344,10 @@ def group_scatter(
         )
     ]
 
+    # Skalaen skal kendes inden det første punkt tegnes: er der kunder med
+    # nul eller negativ omsætning, tegnes alle punkter på en symlog-akse.
+    scale = YScale.for_values(data["samlet_turnover_window"].tolist())
+
     fig = go.Figure()
     category_order: list[str] = []
     trace_categories: list[str] = []
@@ -1198,7 +1389,7 @@ def group_scatter(
         hover = [
             f"<b>{name}</b>",
             texts.hover_gm + ": %{x:.1f}%",
-            texts.hover_turnover + ": %{y:,.0f} DKK",
+            texts.hover_turnover + ": %{customdata[0]:,.0f} DKK",
             f"{texts.hover_customer_type}: {shown_type}",
             f"{texts.hover_category}: {category}",
         ]
@@ -1210,7 +1401,9 @@ def group_scatter(
         fig.add_trace(
             go.Scatter(
                 x=[row["samlet_GM"] * 100],
-                y=[row["samlet_turnover_window"]],
+                y=[scale.point(row["samlet_turnover_window"])],
+                # Hover skal vise kroner, ikke aksens koordinat.
+                customdata=[[row["samlet_turnover_window"]]],
                 mode="markers+text",
                 name=str(name),
                 legendgroup=category,
@@ -1232,7 +1425,7 @@ def group_scatter(
             )
         )
 
-    shapes, annotations = category_zone_shapes(cfg)
+    shapes, annotations = category_zone_shapes(cfg, scale)
 
     types_present = [
         texts.customer_type(t) for t in CUSTOMER_TYPE_ORDER
@@ -1281,16 +1474,14 @@ def group_scatter(
             ],
         )
 
-    subtitle_extra = texts.segment_label(title_suffix)
-    if has_industry and not colour_by_segment:
-        subtitle_extra = "  |  ".join(
-            part for part in (subtitle_extra, texts.edge_is_segment) if part
-        )
+    # Udsnittet står i overskriften, ikke i undertitlen: så kan man se
+    # hvilket plot man har foran sig uden at læse med småt.
+    subtitle_extra = texts.edge_is_segment if (has_industry and not colour_by_segment) else ""
 
     fig.update_layout(
         title=dict(
             text=(
-                f"{texts.group_title}<br>"
+                f"{texts.plot_title(texts.group_title, title_suffix)}<br>"
                 f"<sup>{_subtitle(cfg, dates, subtitle_extra, texts)}</sup>"
             ),
             font=dict(size=13),
@@ -1317,6 +1508,7 @@ def group_scatter(
             x_values=(data["samlet_GM"] * 100).tolist(),
             y_values=data["samlet_turnover_window"].tolist(),
             texts=texts,
+            scale=scale,
         ),
     )
     return fig
@@ -1385,7 +1577,10 @@ def item_scatter(
     kategori-blok på én gang.
     """
     data = per_item.copy()
-    data = data[data[WINDOW_ITEM].fillna(0) > 0]
+    # Varer uden et tal kan ikke placeres; varer med nul eller negativ
+    # omsætning kan — y-aksen bliver symlog når der er nogen.
+    data = data[data[WINDOW_ITEM].notna()]
+    scale = YScale.for_values(data[WINDOW_ITEM].tolist())
 
     categories_by_group, turnover_by_group = _group_categories(data, cfg)
     customer_groups = sorted(
@@ -1422,7 +1617,7 @@ def item_scatter(
         fig.add_trace(
             go.Scatter(
                 x=block[ITEM_GM] * 100,
-                y=block[WINDOW_ITEM],
+                y=scale.to_axis(block[WINDOW_ITEM]),
                 mode="markers+text",
                 name=str(name),
                 legendgroup=category,
@@ -1440,8 +1635,14 @@ def item_scatter(
                 # man kan se hvor varen ligger i forhold til alle de andre.
                 selected=dict(marker=dict(size=13, opacity=1)),
                 unselected=dict(marker=dict(opacity=0.12)),
+                # Hover skal vise kroner, ikke aksens koordinat, så beløbet
+                # følger med som data frem for at blive læst af y.
                 customdata=np.column_stack(
-                    [block[GROUP].astype(str), _last_sold(block)]
+                    [
+                        block[GROUP].astype(str),
+                        _last_sold(block),
+                        block[WINDOW_ITEM].to_numpy(),
+                    ]
                 ),
                 hovertemplate=(
                     "<b>%{text}</b><br>"
@@ -1449,7 +1650,7 @@ def item_scatter(
                     f"{texts.hover_category}: {category}<br>"
                     + (f"{texts.hover_kam}: {kam}<br>" if kam is not None else "")
                     + f"{texts.hover_gm}: %{{x:.1f}}%<br>"
-                    + f"{texts.hover_turnover}: %{{y:,.0f}} DKK<br>"
+                    + f"{texts.hover_turnover}: %{{customdata[2]:,.0f}} DKK<br>"
                     + f"{texts.hover_last_sold}: %{{customdata[1]}}<br>"
                     + "<extra></extra>"
                 ),
@@ -1463,7 +1664,7 @@ def item_scatter(
         if category and category[0] in cfg.volume_zones
     ]
     default_level = present[0] if present else (levels[0] if levels else "A")
-    shapes, zone_annotations = volume_zone_shapes(default_level, cfg, texts)
+    shapes, zone_annotations = volume_zone_shapes(default_level, cfg, texts, scale)
 
     # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
     # så KAM — og nederst nulstil-knappen.
@@ -1514,7 +1715,7 @@ def item_scatter(
 
     level_buttons = []
     for level, name in zip(levels, level_names):
-        level_shapes, level_annotations = volume_zone_shapes(level, cfg, texts)
+        level_shapes, level_annotations = volume_zone_shapes(level, cfg, texts, scale)
         level_buttons.append(
             dict(
                 label=name,
@@ -1550,8 +1751,8 @@ def item_scatter(
     fig.update_layout(
         title=dict(
             text=(
-                f"{texts.item_title}<br>"
-                f"<sup>{_subtitle(cfg, dates, texts.segment_label(title_suffix), texts)}</sup>"
+                f"{texts.plot_title(texts.item_title, title_suffix)}<br>"
+                f"<sup>{_subtitle(cfg, dates, '', texts)}</sup>"
             ),
             font=dict(size=13),
         ),
@@ -1582,6 +1783,7 @@ def item_scatter(
             x_values=(data[ITEM_GM] * 100).tolist(),
             y_values=data[WINDOW_ITEM].tolist(),
             texts=texts,
+            scale=scale,
         ),
     )
     return fig
