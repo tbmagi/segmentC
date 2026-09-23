@@ -259,7 +259,8 @@ HELP_CONTENT: list[Block] = [
     ),
     (
         BODY,
-        "Over item-plottet er der et søgefelt til varenumre. Den søgte vare "
+        "Under item-plottet — mellem x-aksen og knapperne — er der et "
+        "søgefelt til varenumre. Den søgte vare "
         "fremhæves, og resten af punkterne tones ned frem for at forsvinde, "
         "så du kan se hvor varen ligger i forhold til de andre. Flere numre "
         "ad gangen adskilles med komma eller mellemrum, og der søges på en "
@@ -287,6 +288,38 @@ HELP_CONTENT: list[Block] = [
         "En kundegruppe med kun ét item filtreres aldrig, og en gruppe hvor "
         "alle items ser ekstreme ud beholdes urørt frem for at forsvinde.\n\n",
     ),
+    (
+        BODY,
+        "Z-scoren har en begrænsning det er værd at kende: den største score "
+        "der overhovedet kan opstå hos en kunde med n varer er kvadratroden "
+        "af (n-1). Med tre varer kan ingen af dem nå over 1,41, og med "
+        "tærskel 2 fjernes der derfor ALDRIG noget hos en kunde med under "
+        "seks varer — uanset hvor vild marginen er.\n\n"
+        "Grunden er at varen selv er med til at bestemme det målebånd den "
+        "måles med. En margin på -1014 % blandt tre varer trækker "
+        "gennemsnittet ned til -307 % og spredningen op på 500 procentpoint, "
+        "og målt mod dét ligger varen kun 1,4 spredninger fra midten.\n\n",
+    ),
+
+    (HEADING, "Trin 7b: Faste GM%-grænser\n"),
+    (
+        BODY,
+        "Grænserne dækker netop det hul. De frasorterer varer hvis margin "
+        "ligger uden for et fast spænd, og de virker ved ethvert antal varer "
+        "— også hos en kunde med to. Et tomt felt betyder ingen grænse i den "
+        "retning, så man kan nøjes med en nedre, en øvre eller begge.\n\n"
+        "Grænserne anvendes FØR z-scoren, så en vild vare ikke får lov at "
+        "trække spredningen op og skjule de øvrige afvigere. De virker også "
+        "når 'Fjern outliers' er slået helt fra.\n\n",
+    ),
+    (
+        NOTE,
+        "Begge mekanismer fjerner varen fra grafen OG fra kundens samlede "
+        "tal — en frasorteret vare tæller ikke med i kundens omsætning eller "
+        "GM%. Ligger alle en kundes varer uden for spændet, beholdes de "
+        "urørt, så kunden ikke forsvinder helt ud af analysen. De fjernede "
+        "varer står på Excel-fanen 'Outliers' med en årsag.\n\n",
+    ),
 
     (NOTE,
      "Akserne er faste: X er lineær og Y logaritmisk. GM% læses som "
@@ -308,7 +341,8 @@ HELP_CONTENT: list[Block] = [
     (
         NOTE,
         "Er 'Lav også graferne på engelsk' slået til, skrives de samme "
-        "grafer en gang til i undermappen English/ med engelske tekster. "
+        "grafer en gang til i undermappen English/ med engelske tekster og "
+        "engelske filnavne. "
         "Beregningen køres ikke om — de to udgaver bygger på ét og samme "
         "resultat, så de kan ikke vise hver sit tal. Excel-rapporten og "
         "programmet selv er på dansk.\n",

@@ -655,13 +655,54 @@ add(
     "Figur 5 — Samme to varer, samme data. Forankringen afgør hvilken " +
       "periode hver vare måles over."
   ),
-  h2("Trin 6 — Outlier-filter"),
+  h2("Trin 6 — Frasortering af ekstreme varer"),
   p(
-    "Valgfrit. Inden for hver kundegruppe kan enkeltvarer der ligger " +
-      "ekstremt langt fra gennemsnittet sorteres fra, så de ikke trækker " +
-      "hele kunden skævt. Tærsklen sættes i antal standardafvigelser: 1 er " +
-      "aggressiv, 2 er det typiske valg, 3 fjerner kun det virkelig " +
-      "ekstreme."
+    "Valgfrit, og der er to uafhængige mekanismer. Begge fjerner varen fra " +
+      "grafen **og** fra kundens samlede tal, og begge skriver de fjernede " +
+      "varer på Excel-fanen Outliers med en årsag."
+  ),
+  p(
+    "**Z-score** måler hver vare mod kundens øvrige varer. Tærsklen sættes " +
+      "i antal standardafvigelser: 1 er aggressiv, 2 er det typiske valg, " +
+      "3 fjerner kun det virkelig ekstreme."
+  ),
+  p(
+    "Den har en begrænsning det er værd at kende. Den største z-score der " +
+      "overhovedet kan opstå hos en kunde med n varer er kvadratroden af " +
+      "(n−1):"
+  ),
+  code([
+    "  2 varer  ->  største mulige z-score  1,00",
+    "  3 varer  ->                          1,41",
+    "  4 varer  ->                          1,73",
+    "  5 varer  ->                          2,00",
+    "  6 varer  ->                          2,24",
+  ]),
+  p(
+    "Med tærskel 2 fjernes der derfor **aldrig** noget hos en kunde med " +
+      "under seks varer — uanset hvor vild marginen er. Grunden er at varen " +
+      "selv er med til at bestemme det målebånd den måles med: en margin på " +
+      "−1014 % blandt tre varer trækker gennemsnittet ned til −307 % og " +
+      "spredningen op på 500 procentpoint, og målt mod dét ligger varen kun " +
+      "1,4 spredninger fra midten."
+  ),
+  p(
+    "**Faste GM%-grænser** dækker netop det hul. De frasorterer varer hvis " +
+      "margin ligger uden for et fast spænd — fx under −30 % eller over " +
+      "100 % — og de virker ved ethvert antal varer, også hos en kunde med " +
+      "to. Lader man et felt stå tomt, er der ingen grænse i den retning."
+  ),
+  p(
+    "Grænserne anvendes **før** z-scoren, så en vild vare ikke får lov at " +
+      "trække spredningen op og skjule de øvrige afvigere. De virker også " +
+      "når Fjern outliers er slået helt fra."
+  ),
+  note(
+    "Kunden forsvinder aldrig helt.",
+    "Ligger alle en kundes varer uden for spændet, beholdes de urørt. " +
+      "Ellers ville kunden ryge ud af analysen — også ud af sin egen " +
+      "omsætning — uden at nogen lagde mærke til det. Det siges i " +
+      "fremdriftsteksten når det sker."
   ),
   h2("Trin 7 — Kundekategori"),
   p(
@@ -790,15 +831,17 @@ add(
       "klumpe sammen nede ved nul."
   ),
   p(
-    "Øverst til venstre over kundegruppe-grafen står en lille **farvekode**, " +
-      "der siger hvilken farve der hører til hvilken kundetype. Den ligger " +
-      "uden for selve grafen, så den hverken stjæler plads fra punkterne " +
-      "eller kan slås fra ved et uheld. Farvelægges der efter Industry " +
-      "segment i stedet, viser farvekoden brancherne."
+    "Under kundegruppe-grafen — mellem x-aksen og den første knaprække — " +
+      "står en lille **farvekode**, der siger hvilken farve der hører til " +
+      "hvilken kundetype. Den ligger uden for selve grafen, så den hverken " +
+      "stjæler plads fra punkterne eller kan slås fra ved et uheld. " +
+      "Farvelægges der efter Industry segment i stedet, viser farvekoden " +
+      "brancherne."
   ),
   h2("Søg efter et varenummer"),
   p(
-    "Over item-grafen er der et søgefelt. Skriv et varenummer, og varen " +
+    "Under item-grafen, samme sted som farvekoden sidder på den anden " +
+      "graf, er der et søgefelt. Skriv et varenummer, og varen " +
       "bliver fremhævet, mens resten af punkterne tones ned — de forsvinder " +
       "ikke, så du kan se hvor varen ligger i forhold til alle de andre. " +
       "**Ryd** fjerner markeringen igen."
@@ -943,16 +986,17 @@ add(
     "Skal graferne sendes til en kunde eller en kollega der ikke læser " +
       "dansk, sættes **Lav også graferne på engelsk** til i indstillingerne. " +
       "Så skrives de samme grafer en gang til i undermappen English/ — samme " +
-      "filnavne, engelske tekster."
+      "filnavne. Også filnavnene er oversat, så mappen kan sendes videre " +
+      "som den er."
   ),
   code([
     "Kundesegmentering 2026-09-23/",
-    "  kunde_segmentering_kundegruppe_sinter.html      ← dansk",
+    "  kunde_segmentering_kundegruppe_sinter.html",
     "  kunde_segmentering_item_sinter.html",
     "  kunde_segmentering.xlsx",
     "  English/",
-    "    kunde_segmentering_kundegruppe_sinter.html    ← samme graf, engelsk",
-    "    kunde_segmentering_item_sinter.html",
+    "    customer_segmentation_customer_group_sinter.html",
+    "    customer_segmentation_item_sinter.html",
   ]),
   p(
     "Alt i grafen er oversat: titel, akser, knapper, farvekode, søgefelt og " +
@@ -960,6 +1004,12 @@ add(
       "og volumenkravene hedder Level A til D. Kundenavne, KAM-initialer og " +
       "brancher står som de står i data — de er navne, ikke ord der kan " +
       "oversættes."
+  ),
+  p(
+    "Det samme gælder basisnavnet på filerne. Står feltet **Basisnavn " +
+      "(filer)** på fabriksnavnet kunde_segmentering, er det vores eget ord, " +
+      "og det bliver til customer_segmentation. Har du selv skrevet et navn, " +
+      "er det dit, og det står uændret på begge sprog."
   ),
   note(
     "Tallene kan ikke komme til at afvige.",
@@ -1009,7 +1059,7 @@ add(
     [
       ["Placering af resultatet", "output-mappe, basisnavn på filerne og engelsk udgave af graferne"],
       ["Kundetyper", "hvor mange måneder bagud en kunde regnes som eksisterende"],
-      ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items, outliers"],
+      ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items, outliers og faste GM%-grænser"],
       ["Opdeling af plots", "sinter/støb og DK/CN, og hvilke turnover-typer der hører til hvad"],
       ["Beregning", "turnover-vinduets længde, forankring, vægtet GM%"],
       ["Grænser og områder", "kategori-grænser og volumenområder"],
@@ -1059,6 +1109,14 @@ add(
       [
         "En graf er helt tom",
         "Udsnittet indeholder ingen rækker — fx kun sinter i en fil uden sinter-varer.",
+      ],
+      [
+        "En vare mangler på item-grafen",
+        "Varen har nul eller negativ turnover i vinduet. Y-aksen er logaritmisk, og logaritmen af et negativt tal findes ikke, så punktet kan ikke tegnes. Varen tæller stadig fuldt ud med i kundens omsætning, GM% og kategori, og den står i Excel-rapporten.",
+      ],
+      [
+        "En vare med vanvittig margin bliver ikke fjernet",
+        "Har kunden under seks varer, kan z-scoren ikke nå op over tærskel 2 — se kapitel 4, trin 6. Brug de faste GM%-grænser i stedet.",
       ],
       [
         "Programmet kan ikke gemme",

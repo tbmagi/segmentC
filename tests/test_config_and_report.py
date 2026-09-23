@@ -7,8 +7,10 @@ import pytest
 
 from segmentering.config import Band, Config, OutputPaths, validate_bands
 from segmentering.dataio import GROUP, ITEM_NO, KAM
+from segmentering.dataio import ReferenceDates
 from segmentering.excel_report import (
     SUMMARY_COLUMNS,
+    parameter_sheet,
     prepare_item_sheet,
     prepare_summary_sheet,
 )
@@ -20,6 +22,11 @@ from segmentering.metrics import (
     TURNOVER_SUM,
     WINDOW_GROUP,
     WINDOW_ITEM,
+)
+
+
+DATES = ReferenceDates(
+    today=pd.Timestamp("2026-05-01"), window_start=pd.Timestamp("2024-05-01")
 )
 
 
@@ -214,3 +221,38 @@ def test_the_item_sheet_keeps_kam_when_the_data_has_it():
     frame = sample_item_frame()
     frame[KAM] = ["PHA"]
     assert list(prepare_item_sheet(frame, Config()).columns)[:3] == [GROUP, KAM, ITEM_NO]
+
+
+# --- Faste GM%-grænser -------------------------------------------------------
+
+
+def test_the_gm_limits_are_blank_by_default():
+    cfg = Config()
+    assert cfg.gm_limit_min_pct is None and cfg.gm_limit_max_pct is None
+    cfg.validate()
+
+
+def test_a_lower_limit_above_the_upper_is_rejected():
+    with pytest.raises(ValueError, match="nedre GM%-grænse"):
+        Config(gm_limit_min_pct=100, gm_limit_max_pct=-30).validate()
+
+
+def test_one_limit_alone_is_fine():
+    Config(gm_limit_min_pct=-30).validate()
+    Config(gm_limit_max_pct=100).validate()
+
+
+def test_the_limits_are_written_to_the_parameter_sheet():
+    rows = parameter_sheet(
+        Config(gm_limit_min_pct=-30, gm_limit_max_pct=100), DATES
+    )
+    values = dict(zip(rows["Parameter"], rows["Værdi"]))
+    assert values["GM%-grænse, nedre"] == "-30 %"
+    assert values["GM%-grænse, øvre"] == "100 %"
+
+
+def test_a_blank_limit_says_so_in_the_parameter_sheet():
+    rows = parameter_sheet(Config(), DATES)
+    values = dict(zip(rows["Parameter"], rows["Værdi"]))
+    assert values["GM%-grænse, nedre"] == "ingen"
+    assert values["GM%-grænse, øvre"] == "ingen"

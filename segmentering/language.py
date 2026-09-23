@@ -74,11 +74,21 @@ class Texts:
     search_none: str
     search_clear: str
 
+    # Filnavne
+    file_basename: str
+    file_role_group: str
+    file_role_item: str
+
     #: Danske værdier i data -> det der vises. Værdier uden en oversættelse
     #: vises som de er, så et KAM-navn eller en branche aldrig bliver rørt.
     customer_types: Mapping[str, str] = field(default_factory=dict)
     volume_zones: Mapping[str, str] = field(default_factory=dict)
     segment_labels: Mapping[str, str] = field(default_factory=dict)
+    file_parts: Mapping[str, str] = field(default_factory=dict)
+
+    def file_part(self, value: str) -> str:
+        """Oversætter ét led i filnavnet, fx "stoebe" -> "cast"."""
+        return self.file_parts.get(value, value)
 
     def customer_type(self, value: object) -> str:
         return self.customer_types.get(str(value), str(value))
@@ -137,9 +147,13 @@ DANISH = Texts(
     search_found_one="1 vare fremhævet",
     search_none="ingen varer matcher",
     search_clear="Ryd",
+    file_basename="kunde_segmentering",
+    file_role_group="kundegruppe",
+    file_role_item="item",
     customer_types={},
     volume_zones={},
     segment_labels={},
+    file_parts={},
 )
 
 ENGLISH = Texts(
@@ -180,6 +194,9 @@ ENGLISH = Texts(
     search_found_one="1 item highlighted",
     search_none="no items match",
     search_clear="Clear",
+    file_basename="customer_segmentation",
+    file_role_group="customer_group",
+    file_role_item="item",
     customer_types={
         "Eksisterende": "Existing",
         "Ny": "New",
@@ -198,6 +215,13 @@ ENGLISH = Texts(
         "Støbe": "Cast",
         "kun eksisterende kunder": "existing customers only",
         "Outliers fjernet": "Outliers removed",
+    },
+    file_parts={
+        "sinter": "sinter",
+        "stoebe": "cast",
+        "cn": "cn",
+        "dk": "dk",
+        "eks": "existing",
     },
 )
 

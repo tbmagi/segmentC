@@ -44,25 +44,66 @@ def _z_scores(values: pd.Series) -> pd.Series:
     return (values - values.mean()) / std
 
 
+def _gm_limit_reasons(
+    values: pd.Series, low: float | None, high: float | None
+) -> pd.Series:
+    """
+    Årsagsteksten for hver vare der ligger uden for GM%-spændet — ellers "".
+
+    Grænserne er i procent, mens ``values`` er en brøkdel, så 20,6 % står som
+    0,206. Sammenligningen sker i procent, fordi det er det brugeren har
+    skrevet i indstillingerne og det der skal stå i Excel-arket.
+    """
+    percent = values * 100
+    reasons = pd.Series("", index=values.index, dtype=object)
+    if low is not None:
+        below = percent < low
+        reasons[below.fillna(False)] = f"GM% under {low:g} %"
+    if high is not None:
+        above = percent > high
+        reasons[above.fillna(False)] = f"GM% over {high:g} %"
+    return reasons
+
+
 def filter_outliers(
     per_item: pd.DataFrame,
     std_threshold: float,
     metric: str = "begge",
     log: Log = print,
+    gm_limit_min_pct: float | None = None,
+    gm_limit_max_pct: float | None = None,
 ) -> OutlierSplit:
     """
-    Fjerner items hvor |z-score| overstiger ``std_threshold``.
+    Fjerner items der falder uden for et fast GM%-spænd eller har en ekstrem
+    z-score.
 
-    ``metric`` vælger hvilke mål der udløser frasortering:
+    De to mekanismer er uafhængige og kan bruges hver for sig:
+
+    **Faste grænser** (``gm_limit_min_pct`` / ``gm_limit_max_pct``, i procent)
+    fjerner varer hvis margin ligger uden for spændet. En grænse på ``None``
+    betyder ingen grænse i den retning. Grænserne virker uanset ``metric`` —
+    også når z-score-filteret er slået helt fra — og uanset hvor få varer
+    kunden har.
+
+    **Z-score** (``std_threshold``, ``metric``) fjerner varer der er ekstreme
+    *sammenlignet med kundens øvrige varer*::
 
         "begge"    – Turnover ELLER GM% er ekstrem
         "turnover" – kun usædvanlig høj/lav omsætning
         "gm"       – kun usædvanlig høj/lav margin
-        "ingen"    – ingen filtrering
+        "ingen"    – ingen z-score-filtrering
 
-    To sikkerhedsregler gælder: kundegrupper med kun ét item filtreres aldrig
-    (spredning kan ikke beregnes), og en gruppe hvor alle items ser ekstreme
-    ud beholdes urørt frem for at forsvinde helt fra plottet.
+    Grænserne anvendes FØRST, og z-scoren beregnes på det der er tilbage. Det
+    er ikke en detalje: en vare med −1014 % margin trækker selv gennemsnittet
+    og spredningen så meget at dens egen z-score bliver lille, og den skjuler
+    samtidig de øvrige afvigere. Fjernes den først, måles resten mod et
+    fornuftigt målebånd.
+
+    To sikkerhedsregler gælder for z-scoren: kundegrupper med kun ét item
+    filtreres aldrig (spredning kan ikke beregnes), og en gruppe hvor alle
+    items ser ekstreme ud beholdes urørt frem for at forsvinde helt fra
+    plottet. Den sidste regel gælder også de faste grænser, så en kunde aldrig
+    kan forsvinde helt ud af analysen — er det tilfældet, siges det i loggen.
 
     De fjernede items returneres med deres z-scores og en læsbar årsag, så de
     kan gennemgås på Excel-fanen 'Outliers'.
@@ -73,7 +114,8 @@ def filter_outliers(
             f"fik: {metric!r}"
         )
 
-    if per_item.empty or metric == "ingen":
+    has_limits = gm_limit_min_pct is not None or gm_limit_max_pct is not None
+    if per_item.empty or (metric == "ingen" and not has_limits):
         return OutlierSplit(kept=per_item.copy(), removed=pd.DataFrame())
 
     use_turnover = metric in ("begge", "turnover")
@@ -81,9 +123,32 @@ def filter_outliers(
 
     kept_frames: list[pd.DataFrame] = []
     removed_frames: list[pd.DataFrame] = []
+    kept_whole: list[str] = []
 
-    for _, group_df in per_item.groupby(GROUP, sort=False):
-        if len(group_df) < 2:
+    for name, group_df in per_item.groupby(GROUP, sort=False):
+        # --- Trin 1: de faste grænser, uafhængigt af antal varer ------------
+        limit_reasons = (
+            _gm_limit_reasons(group_df[ITEM_GM], gm_limit_min_pct, gm_limit_max_pct)
+            if has_limits
+            else pd.Series("", index=group_df.index, dtype=object)
+        )
+        outside = limit_reasons != ""
+        if outside.all() and len(group_df) > 0:
+            # Alle kundens varer ligger uden for spændet. Fjernes de, ryger
+            # kunden helt ud af analysen — også ud af sin egen omsætning.
+            kept_whole.append(str(name))
+            kept_frames.append(group_df)
+            continue
+        if outside.any():
+            removed = group_df[outside].copy()
+            removed[TURNOVER_Z] = np.nan
+            removed[GM_Z] = np.nan
+            removed[OUTLIER_REASON] = limit_reasons[outside]
+            removed_frames.append(removed)
+            group_df = group_df[~outside]
+
+        # --- Trin 2: z-score på det der er tilbage --------------------------
+        if metric == "ingen" or len(group_df) < 2:
             kept_frames.append(group_df)
             continue
 
@@ -119,15 +184,40 @@ def filter_outliers(
 
         kept_frames.append(scored[~is_outlier].drop(columns=_Z_COLUMNS))
 
-    kept = pd.concat(kept_frames, ignore_index=True)
+    # Tomme rammer sorteres fra: en kundegruppe kan have mistet alle sine
+    # varer til grænserne, og pandas brokker sig over at lægge tomme sammen.
+    kept_parts = [frame for frame in kept_frames if not frame.empty]
+    kept = (
+        pd.concat(kept_parts, ignore_index=True)
+        if kept_parts
+        else per_item.iloc[0:0].copy()
+    )
     removed_all = (
         pd.concat(removed_frames, ignore_index=True)
         if removed_frames
         else pd.DataFrame()
     )
 
+    limits = _limit_text(gm_limit_min_pct, gm_limit_max_pct)
+    rule = f"±{std_threshold} std, metrik='{metric}'" if metric != "ingen" else "kun grænser"
     log(
-        f"  Outlier-filter (±{std_threshold} std, metrik='{metric}'): "
+        f"  Outlier-filter ({rule}{limits}): "
         f"fjernede {len(removed_all)} items, beholder {len(kept)} items"
     )
+    for name in kept_whole:
+        log(
+            f"    BEMÆRK: alle varer hos '{name}' ligger uden for GM%-spændet "
+            "– kundegruppen er beholdt urørt frem for at forsvinde"
+        )
     return OutlierSplit(kept=kept, removed=removed_all)
+
+
+def _limit_text(low: float | None, high: float | None) -> str:
+    """Grænserne skrevet til loggen, eller "" hvis der ingen er."""
+    if low is None and high is None:
+        return ""
+    if low is None:
+        return f", GM% over {high:g} %"
+    if high is None:
+        return f", GM% under {low:g} %"
+    return f", GM% uden for {low:g}–{high:g} %"

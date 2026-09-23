@@ -126,7 +126,9 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
    summeret hvis vægtet GM% er slået til.
 5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
    seneste aktivitet. De to plots kan have hver sin forankring.
-6. **Outlier-filter** – valgfrit z-score-filter inden for hver kundegruppe.
+6. **Frasortering af ekstreme items** – to uafhængige mekanismer:
+   et valgfrit z-score-filter inden for hver kundegruppe, og et fast
+   GM%-spænd der gælder uanset hvor få varer kunden har.
 7. **Kundekategori** – A/B/C/D ud fra turnover-båndet, med `+`/`-` alt efter om
    GM% når kategoriens krav.
 8. **KAM** – kunden tildeles den key account manager der står på den seneste
@@ -160,14 +162,15 @@ valgte er grøn og de fravalgte røde. Fremhæv-knapperne bliver hverken grønne
 eller røde: de skjuler ingenting. De to nuancer er også forskellige i lyshed,
 så tilstanden kan aflæses af en rødgrønt farveblind.
 
-Over kundegruppe-plottet står en **farvekode** for kundetyperne, i venstre
-side. Den ligger uden for selve grafen — som almindelig HTML over plottet —
-så den hverken stjæler plads fra punkterne eller kan slås fra ved et uheld.
+Under kundegruppe-plottet — mellem x-aksen og den første knaprække — står en
+**farvekode** for kundetyperne. Den ligger uden for selve grafen, som
+almindelig HTML oven på figuren, så den hverken stjæler plads fra punkterne
+eller kan slås fra ved et uheld.
 
 **Dobbeltklik** viser kun den ene kunde — enten på selve punktet eller på
 navnet i legenden. Dobbeltklik igen bringer resten tilbage.
 
-Over item-plottet står et **søgefelt til varenumre**. Skriv et nummer, og
+Samme sted under item-plottet står et **søgefelt til varenumre**. Skriv et nummer, og
 varen fremhæves mens resten af punkterne tones ned — de forsvinder ikke, så
 man kan se hvor varen ligger i forhold til de andre. Flere numre ad gangen
 adskilles med komma eller mellemrum, og der søges på en del af nummeret, så
@@ -193,6 +196,63 @@ filterknap, beregnes synligheden forfra ud fra knapperne alene.
 Hele forløbet er også beskrevet i programmets eget hjælpevindue, med et
 gennemgående regneeksempel.
 
+## Frasortering af ekstreme items
+
+Der er to uafhængige mekanismer. Begge fjerner varen fra grafen **og** fra
+kundens samlede tal — en frasorteret vare tæller ikke med i kundens omsætning,
+GP eller GM%. De fjernede varer står på Excel-fanen `Outliers` med en årsag,
+så det kan efterprøves.
+
+**Z-score** (`Fjern outliers`) måler hver vare mod kundens øvrige varer:
+`z = (værdi − gennemsnit) / spredning`, og varer over tærsklen ryger ud.
+
+Den har en begrænsning det er værd at kende. Den største z-score der
+overhovedet kan opstå i en gruppe med `n` varer er `√(n−1)`:
+
+| Antal varer | Største mulige \|z\| |
+| --- | --- |
+| 2 | 1,00 |
+| 3 | 1,41 |
+| 4 | 1,73 |
+| 5 | 2,00 |
+| 6 | 2,24 |
+
+Med tærskel 2 fjernes der derfor **aldrig** noget hos en kunde med under seks
+varer, uanset hvor ekstrem varen er. Årsagen er at varen selv er med til at
+bestemme gennemsnittet og spredningen: en margin på −1014 % blandt tre varer
+trækker gennemsnittet ned til −307 % og spredningen op på 500 procentpoint, og
+målt mod dét ligger varen kun 1,4 spredninger fra midten.
+
+**Faste GM%-grænser** dækker netop det hul. De frasorterer varer hvis margin
+ligger uden for et spænd, og de virker ved ethvert antal varer — også hos en
+kunde med to. Et tomt felt betyder ingen grænse i den retning, så man kan
+nøjes med en nedre, en øvre eller begge.
+
+Grænserne anvendes **før** z-scoren, så en vild vare ikke får lov at trække
+spredningen op og skjule de øvrige afvigere. De virker også når `Fjern
+outliers` er slået helt fra.
+
+Ligger *alle* en kundes varer uden for spændet, beholdes de urørt: ellers
+ville kunden forsvinde helt ud af analysen, også ud af sin egen omsætning.
+Det siges i fremdriftsteksten når det sker.
+
+## Hvorfor mangler en vare på item-plottet?
+
+Y-aksen er logaritmisk, og logaritmen af nul eller et negativt tal findes
+ikke. Varer med **nul eller negativ turnover i vinduet** kan derfor ikke
+tegnes og udelades fra item-plottet.
+
+Det er udelukkende et tegne-forbehold. Varen indgår fuldt ud i alt andet:
+
+- kundens samlede omsætning, GP og GM%
+- kundens kategori og dens placering på kundegruppe-plottet
+- antal items
+- Excel-fanerne `Items_alle` og `Items_filt`
+
+Bemærk at `Fjern rækker med Turnover = 0` kun fjerner rækker der er **præcis**
+nul. Negative rækker — kreditnotaer, returvarer — bliver stående med vilje, så
+de stadig tælles med i kundens tal.
+
 ## Udsnit og filnavne
 
 Analysen kører ét **udsnit** ad gangen. Udsnittene udspændes af tre valg i
@@ -207,15 +267,19 @@ fanerne for et udsnit viser derfor altid de samme tal.
 ```
 
 Sættes **Lav også graferne på engelsk** til i indstillingerne, skrives de
-samme figurer en gang til i undermappen `English/` med engelske tekster —
-samme filnavne, samme tal. Beregningen køres ikke om: de to udgaver bygger på
-ét og samme resultat, så de kan ikke komme til at vise hver sit. Kun graferne
+samme figurer en gang til i undermappen `English/` med engelske tekster og
+engelske filnavne. Beregningen køres ikke om: de to udgaver bygger på ét og
+samme resultat, så de kan ikke komme til at vise hver sit. Kun graferne
 oversættes; Excel-rapporten og programmet selv er på dansk.
 
 ```
-<basis>_kundegruppe_sinter.html          ← dansk
-English/<basis>_kundegruppe_sinter.html  ← samme graf, engelske tekster
+kunde_segmentering_kundegruppe_stoebe_eks.html            ← dansk
+English/customer_segmentation_customer_group_cast_existing.html
 ```
+
+Basisnavnet følger med i oversættelsen så længe det står på fabriksnavnet
+`kunde_segmentering` — det er vores eget ord. Har du selv skrevet et navn i
+**Basisnavn (filer)**, er det dit, og det bliver stående på begge sprog.
 
 Plotly-biblioteket lægges ind i hver HTML-fil. Det gør filen ca. 4 MB større,
 men den virker til gengæld uden internet, bag en firewall der blokerer

@@ -94,6 +94,31 @@ def split_list(text: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def _percent_text(value: float | None) -> str:
+    """Skriver en GM%-grænse til feltet. ``None`` bliver til et tomt felt."""
+    if value is None:
+        return ""
+    return f"{value:g}".replace(".", ",")
+
+
+def _percent_value(text: str, side: str) -> float | None:
+    """
+    Læser en GM%-grænse fra feltet. Tomt felt betyder ingen grænse.
+
+    Både komma og punktum accepteres som decimaltegn: feltet er dansk, men
+    folk taster ofte punktum, og det må ikke koste en fejlbesked.
+    """
+    cleaned = text.strip().replace("%", "").replace(",", ".").strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError as exc:
+        raise ValueError(
+            f"GM%-grænsen '{side}' skal være et tal eller tom, fik: '{text.strip()}'"
+        ) from exc
+
+
 def describe_failure(exc: BaseException) -> str:
     """
     Laver en besked brugeren kan handle på.
@@ -163,6 +188,8 @@ class SegmenteringApp(tk.Tk):
         self.var_remove_outliers = tk.BooleanVar()
         self.var_outlier_std = tk.IntVar()
         self.var_outlier_metric = tk.StringVar()
+        self.var_gm_limit_min = tk.StringVar()
+        self.var_gm_limit_max = tk.StringVar()
 
         self.var_english_copy = tk.BooleanVar()
         self.var_split_item_type = tk.BooleanVar()
@@ -522,6 +549,55 @@ class SegmenteringApp(tk.Tk):
             "  • ingen    : ingen filtrering",
         ).grid(row=1, column=2, sticky="w", padx=(0, 4))
 
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=8, column=0, columnspan=3, sticky="ew", pady=6
+        )
+        heading(frame, "Faste GM%-grænser:").grid(
+            row=9, column=0, columnspan=3, sticky="w", pady=(0, 1)
+        )
+        limits = ttk.Frame(frame)
+        limits.grid(row=10, column=0, columnspan=3, sticky="ew", padx=(15, 0), pady=(0, 3))
+
+        ttk.Label(limits, text="Frasortér hvis GM% er under:").grid(
+            row=0, column=0, sticky="w", pady=3
+        )
+        ttk.Entry(limits, textvariable=self.var_gm_limit_min, width=7).grid(
+            row=0, column=1, sticky="w", padx=5
+        )
+        ttk.Label(limits, text="%", foreground=HINT_COLOUR).grid(row=0, column=2, sticky="w")
+        ttk.Label(limits, text="eller over:").grid(
+            row=0, column=3, sticky="w", padx=(12, 0)
+        )
+        ttk.Entry(limits, textvariable=self.var_gm_limit_max, width=7).grid(
+            row=0, column=4, sticky="w", padx=5
+        )
+        ttk.Label(limits, text="%", foreground=HINT_COLOUR).grid(row=0, column=5, sticky="w")
+        help_icon(
+            limits,
+            "Et fast spænd for GM% på item-niveau. Varer uden for spændet "
+            "frasorteres.\n\n"
+            "Lad et felt stå TOMT for ingen grænse i den retning.\n\n"
+            "Grænserne er uafhængige af outlier-filteret ovenfor og virker "
+            "også når 'Fjern outliers' er slået fra.\n\n"
+            "Hvorfor de er nødvendige: z-scoren har et matematisk loft på "
+            "√(n−1), hvor n er kundens antal varer. Med tre varer kan ingen "
+            "af dem nogensinde nå over 1,41, og med tærskel 2 fjernes der "
+            "derfor ALDRIG noget hos en kunde med under seks varer — uanset "
+            "hvor vild marginen er. De faste grænser virker ved ethvert "
+            "antal varer.\n\n"
+            "Grænserne anvendes før z-scoren, så en ekstrem vare ikke får "
+            "lov at trække spredningen op og skjule de øvrige.\n\n"
+            "Bemærk: en frasorteret vare tæller heller ikke med i kundens "
+            "samlede omsætning og GM%. Ligger ALLE en kundes varer uden for "
+            "spændet, beholdes de urørt, så kunden ikke forsvinder helt.",
+        ).grid(row=0, column=6, sticky="w", padx=(4, 4))
+
+        ttk.Label(
+            limits,
+            text="tom = ingen grænse · fx -30 og 100",
+            foreground=HINT_COLOUR,
+        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(0, 2))
+
         frame.columnconfigure(1, weight=1)
 
     def _build_split_section(self, parent: tk.Widget) -> None:
@@ -872,6 +948,8 @@ class SegmenteringApp(tk.Tk):
         self.var_remove_outliers.set(cfg.remove_outliers)
         self.var_outlier_std.set(int(cfg.outlier_std_threshold))
         self.var_outlier_metric.set(cfg.outlier_metric)
+        self.var_gm_limit_min.set(_percent_text(cfg.gm_limit_min_pct))
+        self.var_gm_limit_max.set(_percent_text(cfg.gm_limit_max_pct))
 
         self.var_english_copy.set(cfg.english_copy)
         self.var_split_item_type.set(cfg.split_by_item_type)
@@ -932,6 +1010,8 @@ class SegmenteringApp(tk.Tk):
             remove_outliers=self.var_remove_outliers.get(),
             outlier_std_threshold=float(self.var_outlier_std.get()),
             outlier_metric=self.var_outlier_metric.get(),
+            gm_limit_min_pct=_percent_value(self.var_gm_limit_min.get(), "under"),
+            gm_limit_max_pct=_percent_value(self.var_gm_limit_max.get(), "over"),
             english_copy=self.var_english_copy.get(),
             split_by_item_type=self.var_split_item_type.get(),
             geo_combined=True,

@@ -18,6 +18,8 @@ from segmentering.metrics import (
 from segmentering.plots import (
     BUTTON_ROW_GAP,
     BUTTON_ROW_PX,
+    OVERLAY_ROW_PX,
+    PLOT_AREA_PX,
     TOGGLE_GUARD,
     RESET_DIMENSION,
     RESET_LABEL,
@@ -27,6 +29,8 @@ from segmentering.plots import (
     Y_MAX_ZONE,
     _segment_highlight_buttons,
     axis_range,
+    colour_key_script,
+    first_row_y,
     flow_button_menus,
     group_scatter,
     item_scatter,
@@ -575,3 +579,59 @@ def test_the_hover_box_still_works_without_a_date_column():
     """Ældre resultater uden kolonnen må ikke vælte plottet."""
     fig = item_scatter(sample_items(), Config(), DATES)
     assert set(fig.data[0].customdata[:, 1]) == {"–"}
+
+
+# --- Bæltet under grafen -----------------------------------------------------
+
+
+def test_the_rows_start_below_the_overlay_band():
+    """
+    Farvekoden og søgefeltet er HTML og kan ikke tegnes inde i figurens SVG,
+    hvor knapperne bor. Der reserveres derfor et bælte mellem x-aksen og
+    første knaprække, som kassen kan lægge sig i.
+    """
+    assert first_row_y(overlays=1) < first_row_y(overlays=0)
+    afstand = (first_row_y(0) - first_row_y(1)) * PLOT_AREA_PX
+    assert afstand == pytest.approx(OVERLAY_ROW_PX)
+
+
+def test_the_figure_grows_to_make_room_for_the_band():
+    """Bæltet må ikke klemme plotområdet — figuren skal vokse i stedet."""
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        layout = fig.layout
+        area = layout.height - layout.margin.t - layout.margin.b
+        assert area == pytest.approx(PLOT_AREA_PX), "plotområdet skrumpede"
+
+
+def test_the_band_leaves_room_between_the_axis_and_the_first_row():
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        top = max(m.y for m in fig.layout.updatemenus)
+        plads = abs(top) * PLOT_AREA_PX
+        assert plads >= OVERLAY_ROW_PX, "der er ikke plads til kassen over knapperne"
+
+
+def test_the_bottom_row_still_fits_inside_the_figure():
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        layout = fig.layout
+        lowest = min(m.y for m in layout.updatemenus)
+        assert abs(lowest) * PLOT_AREA_PX + BUTTON_ROW_PX <= layout.margin.b
+
+
+def test_both_boxes_know_how_to_place_themselves():
+    """Scriptet skal måle sig frem til knappernes plads, ikke regne den ud."""
+    for script in (
+        colour_key_script(group_scatter(groups_with_categories(), Config(), DATES)),
+        search_script(item_scatter(items_with_dates(), Config(), DATES)),
+    ):
+        assert script and "updatemenu-header-group" in script
+        assert "position:absolute" in script
+        assert "plotly_afterplot" in script, "kassen flytter sig ikke med ved gentegning"

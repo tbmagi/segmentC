@@ -90,10 +90,15 @@ BUTTON_FIRST_ROW_PX = 70  # fra x-aksen ned til første række (plads til akseti
 BUTTON_BASE_MARGIN_PX = 90  # bundmargen før rækkerne lægges til
 PLOT_TOP_MARGIN = 100  # plads til titel og undertitel
 
+#: Farvekoden og søgefeltet er almindelig HTML og kan derfor ikke tegnes inde
+#: i figurens SVG, hvor knapperne bor. De lægges i stedet oven på figuren i et
+#: bælte der reserveres mellem x-aksen og første knaprække — så står de under
+#: grafen og over filtrene, uden at stjæle plads fra punkterne.
+OVERLAY_ROW_PX = 56
+
 #: Plotområdets højde — den samme uanset hvor mange knaprækker der kommer til.
 PLOT_AREA_PX = PLOT_HEIGHT - PLOT_TOP_MARGIN - BUTTON_BASE_MARGIN_PX
 BUTTON_ROW_GAP = BUTTON_ROW_PX / PLOT_AREA_PX
-BUTTON_FIRST_ROW_Y = -BUTTON_FIRST_ROW_PX / PLOT_AREA_PX
 
 # Binder alle knapper i en menu sig til ÉN egenskab, opfatter Plotly det som en
 # "simpel binding" og sætter en overvåger på egenskaben. Overvågeren retter
@@ -172,14 +177,24 @@ def neutral_colours() -> dict:
     )
 
 
-def button_area_margin(rows: int) -> int:
-    """Bundmargen der giver plads til ``rows`` knaprækker."""
-    return BUTTON_BASE_MARGIN_PX + rows * BUTTON_ROW_PX
+def button_area_margin(rows: int, overlays: int = 0) -> int:
+    """Bundmargen der giver plads til ``rows`` knaprækker og ``overlays`` bælter."""
+    return BUTTON_BASE_MARGIN_PX + rows * BUTTON_ROW_PX + overlays * OVERLAY_ROW_PX
 
 
-def figure_height(rows: int) -> int:
+def figure_height(rows: int, overlays: int = 0) -> int:
     """Figurens højde: knaprækkerne lægges til i stedet for at klemme plottet."""
-    return PLOT_HEIGHT + rows * BUTTON_ROW_PX
+    return PLOT_HEIGHT + rows * BUTTON_ROW_PX + overlays * OVERLAY_ROW_PX
+
+
+def first_row_y(overlays: int = 0) -> float:
+    """
+    Første knaprækkes y i paper-enheder.
+
+    Er der reserveret plads til et HTML-bælte (farvekode eller søgefelt),
+    skubbes rækkerne tilsvarende længere ned, så bæltet kan ligge imellem.
+    """
+    return -(BUTTON_FIRST_ROW_PX + overlays * OVERLAY_ROW_PX) / PLOT_AREA_PX
 
 
 def _danish_thousands(value: float) -> str:
@@ -570,6 +585,64 @@ _FILTER_SCRIPT = """
 
 #: JavaScript der lægger en farveforklaring ind OVER selve grafen — som
 #: almindelig HTML, ikke som en annotation inde i plotområdet. Så stjæler den
+#: JavaScript der placerer en HTML-kasse i bæltet mellem x-aksen og første
+#: knaprække. Kassen lægges oven på figuren, ikke før den, så den står under
+#: grafen og over filtrene.
+#:
+#: Placeringen MÅLES i browseren frem for at regnes ud af figurens tal.
+#: Knappernes plads afhænger af hvordan browseren ombryder rækkerne, og et
+#: udregnet tal ville skride så snart en etiket blev en smule bredere end
+#: anslået. Derfor findes den øverste knaprække i DOM'en, og kassen sættes
+#: lige over den. Den måles igen efter hver gentegning og ved resize.
+_PLACE_OVERLAY = """
+  function place(box) {
+    var host = gd.parentNode;
+    if (!host) { return; }
+    if (getComputedStyle(host).position === 'static') {
+      host.style.position = 'relative';
+    }
+    var hostRect = host.getBoundingClientRect();
+    var top = null;
+    gd.querySelectorAll('.updatemenu-header-group').forEach(function (row) {
+      var r = row.getBoundingClientRect();
+      if (r.height > 0 && (top === null || r.top < top)) { top = r.top; }
+    });
+    // Plotområdets venstre kant og bund. Målene ligger i figurens layout;
+    // gitteret bruges som reserve hvis Plotly en dag flytter dem.
+    var gdRect = gd.getBoundingClientRect();
+    var size = (gd._fullLayout && gd._fullLayout._size) || null;
+    var grid = gd.querySelector('.gridlayer');
+    var left, bottom;
+    if (size) {
+      left = gdRect.left + size.l;
+      bottom = gdRect.top + size.t + size.h;
+    } else if (grid) {
+      var g = grid.getBoundingClientRect();
+      left = g.left;
+      bottom = g.bottom;
+    } else {
+      left = hostRect.left;
+      bottom = hostRect.bottom;
+    }
+    if (top === null) {
+      // Ingen knapper at måle ud fra: læg kassen under plotområdet i stedet.
+      top = bottom + 44;
+    }
+    box.style.left = Math.max(0, left - hostRect.left) + 'px';
+    box.style.top = (top - hostRect.top - box.offsetHeight - 10) + 'px';
+  }
+
+  function follow(box) {
+    place(box);
+    // Plotly flytter knapperne ved hver gentegning, og browseren ombryder
+    // rækkerne igen når vinduet skifter bredde.
+    if (gd.on) { gd.on('plotly_afterplot', function () { place(box); }); }
+    window.addEventListener('resize', function () { place(box); });
+    setTimeout(function () { place(box); }, 0);
+  }
+"""
+
+
 #: ingen plads fra punkterne, og den kan ikke slås fra ved et uheld.
 _COLOUR_KEY_SCRIPT = """
 (function () {
@@ -583,9 +656,10 @@ _COLOUR_KEY_SCRIPT = """
 
   var box = document.createElement('div');
   box.id = id;
-  box.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:18px;'
+  box.style.cssText = 'position:absolute;z-index:5;'
+    + 'display:flex;align-items:center;flex-wrap:wrap;gap:18px;'
     + 'font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
-    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 0 4px 0;'
+    + 'font-size:13px;color:#333;padding:9px 14px;margin:0;'
     + 'border:1px solid #d8d6d0;border-radius:6px;background:#fbfbfa;'
     + 'width:max-content;max-width:100%;';
 
@@ -607,7 +681,9 @@ _COLOUR_KEY_SCRIPT = """
     box.appendChild(entry);
   });
 
-  gd.parentNode.insertBefore(box, gd);
+  gd.parentNode.appendChild(box);
+__PLACE__
+  follow(box);
 })();
 """
 
@@ -632,9 +708,10 @@ _SEARCH_SCRIPT = """
 
   var box = document.createElement('div');
   box.id = id;
-  box.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+  box.style.cssText = 'position:absolute;z-index:5;'
+    + 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
     + 'font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
-    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 0 4px 0;'
+    + 'font-size:13px;color:#333;padding:9px 14px;margin:0;'
     + 'border:1px solid #d8d6d0;border-radius:6px;background:#fbfbfa;'
     + 'width:max-content;max-width:100%;';
 
@@ -662,7 +739,9 @@ _SEARCH_SCRIPT = """
   hint.style.cssText = 'color:#8a8880;font-size:12px;';
 
   [label, input, clear, status, hint].forEach(function (el) { box.appendChild(el); });
-  gd.parentNode.insertBefore(box, gd);
+  gd.parentNode.appendChild(box);
+__PLACE__
+  follow(box);
 
   function terms() {
     return input.value.split(/[\\s,;]+/)
@@ -718,7 +797,9 @@ def search_box(texts: Texts) -> dict:
 def search_script(fig: "go.Figure") -> str | None:
     """Returnerer søge-scriptet hvis figuren har et søgefelt."""
     meta = fig.layout.meta or {}
-    return _SEARCH_SCRIPT if meta.get("soegning") else None
+    if not meta.get("soegning"):
+        return None
+    return _SEARCH_SCRIPT.replace("__PLACE__", _PLACE_OVERLAY)
 
 
 def colour_key(title: str, items: Sequence[tuple[str, str]]) -> dict:
@@ -732,7 +813,9 @@ def colour_key(title: str, items: Sequence[tuple[str, str]]) -> dict:
 def colour_key_script(fig: "go.Figure") -> str | None:
     """Returnerer forklarings-scriptet hvis figuren har en farvekode."""
     meta = fig.layout.meta or {}
-    return _COLOUR_KEY_SCRIPT if meta.get("farvekode") else None
+    if not meta.get("farvekode"):
+        return None
+    return _COLOUR_KEY_SCRIPT.replace("__PLACE__", _PLACE_OVERLAY)
 
 
 def reset_button(texts: Texts = DANISH) -> dict:
@@ -1174,8 +1257,10 @@ def group_scatter(
     # Nulstil står nederst, under de rækker den nulstiller.
     button_groups.append(("", RESET_DIMENSION, [reset_button(texts)]))
 
+    # Farvekoden ligger i et bælte mellem x-aksen og første knaprække, så
+    # rækkerne skubbes én bæltehøjde længere ned.
     menus, row_labels, button_rows, dimensions = stack_button_rows(
-        button_groups, y_start=BUTTON_FIRST_ROW_Y
+        button_groups, y_start=first_row_y(overlays=1)
     )
     annotations = annotations + row_labels
 
@@ -1223,9 +1308,9 @@ def group_scatter(
         ),
         hovermode="closest",
         plot_bgcolor="white",
-        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
+        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows, overlays=1)),
         width=PLOT_WIDTH,
-        height=figure_height(button_rows),
+        height=figure_height(button_rows, overlays=1),
         **_axes(
             cfg,
             texts.group_y_axis.format(months=cfg.turnover_window_months),
@@ -1401,18 +1486,22 @@ def item_scatter(
         + [_label_width(label) for label, _, buttons in button_groups if buttons]
     )
 
+    # Søgefeltet ligger i et bælte mellem x-aksen og første knaprække, så
+    # rækkerne begynder én bæltehøjde længere nede.
+    top_row = first_row_y(overlays=1)
+
     # Hvor mange rækker kravknapperne fylder afhænger kun af deres bredde, så
     # det kan tælles før de bygges færdige — og resten kan lægges nedenunder.
     level_rows = (
         flow_button_menus(
             [dict(label=name) for name in level_names],
-            y_start=BUTTON_FIRST_ROW_Y,
+            y_start=top_row,
             x_offset=offset,
         )[1]
         if level_names
         else 0
     )
-    below_levels = BUTTON_FIRST_ROW_Y - max(level_rows, 1) * BUTTON_ROW_GAP
+    below_levels = top_row - max(level_rows, 1) * BUTTON_ROW_GAP
 
     menus_below, row_labels, rows_below, dimensions_below = stack_button_rows(
         button_groups, below_levels, x_offset=offset
@@ -1421,9 +1510,7 @@ def item_scatter(
     # Overskrifterne skal med i HVER kravknaps annotationer: en relayout
     # udskifter hele annotations-listen, så uden dem forsvandt rækkernes
     # navne så snart man skiftede niveau.
-    static_annotations = [
-        _row_label(level_label, BUTTON_FIRST_ROW_Y, offset)
-    ] + row_labels
+    static_annotations = [_row_label(level_label, top_row, offset)] + row_labels
 
     level_buttons = []
     for level, name in zip(levels, level_names):
@@ -1446,7 +1533,7 @@ def item_scatter(
     menus: list[dict] = []
     if level_buttons:
         menus, _ = flow_button_menus(
-            level_buttons, y_start=BUTTON_FIRST_ROW_Y, x_offset=offset
+            level_buttons, y_start=top_row, x_offset=offset
         )
         for menu, level in zip(menus, levels):
             menu.update(level_colours(level == default_level))
@@ -1477,7 +1564,7 @@ def item_scatter(
             "valgt": chosen_level,
             "soegning": search_box(texts),
         },
-        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
+        margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows, overlays=1)),
         legend=dict(
             title=texts.legend_title,
             itemclick="toggle",
@@ -1488,7 +1575,7 @@ def item_scatter(
         hovermode="closest",
         plot_bgcolor="white",
         width=PLOT_WIDTH,
-        height=figure_height(button_rows),
+        height=figure_height(button_rows, overlays=1),
         **_axes(
             cfg,
             texts.item_y_axis.format(months=cfg.turnover_window_months),

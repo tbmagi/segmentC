@@ -179,6 +179,14 @@ def parameter_sheet(cfg: Config, dates) -> pd.DataFrame:
         ("Outlier-filter aktivt", cfg.remove_outliers),
         ("Outlier-tærskel (std)", cfg.outlier_std_threshold),
         ("Outlier metrik", cfg.outlier_metric),
+        (
+            "GM%-grænse, nedre",
+            "ingen" if cfg.gm_limit_min_pct is None else f"{cfg.gm_limit_min_pct:g} %",
+        ),
+        (
+            "GM%-grænse, øvre",
+            "ingen" if cfg.gm_limit_max_pct is None else f"{cfg.gm_limit_max_pct:g} %",
+        ),
         ("Farvelogik på kundegruppe-plot", cfg.colour_by),
     ]
     return pd.DataFrame(rows, columns=["Parameter", "Værdi"])

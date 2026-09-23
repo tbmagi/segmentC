@@ -257,6 +257,10 @@ class OutputPaths:
     directory: str
     basename: str
     write_excel: bool = True
+    #: Rolle-delen i filnavnet. Den engelske udgave af graferne sætter sine
+    #: egne ind, så filerne i English/ også hedder noget engelsk.
+    group_role: str = "kundegruppe"
+    item_role: str = "item"
 
     @classmethod
     def create(
@@ -283,10 +287,10 @@ class OutputPaths:
         return os.path.join(self.directory, "_".join(segments) + ".html")
 
     def group_plot(self, *parts: str) -> str:
-        return self._build("kundegruppe", parts)
+        return self._build(self.group_role, parts)
 
     def item_plot(self, *parts: str) -> str:
-        return self._build("item", parts)
+        return self._build(self.item_role, parts)
 
     @property
     def excel(self) -> str | None:
@@ -334,6 +338,17 @@ class Config:
     remove_outliers: bool = True
     outlier_std_threshold: float = 2.0
     outlier_metric: OutlierMetric = "gm"
+
+    #: Fast spænd for GM% i procent. Varer uden for spændet frasorteres
+    #: uanset hvad de øvrige varer hos kunden gør, og uanset hvor få varer
+    #: kunden har. ``None`` = ingen grænse i den retning.
+    #:
+    #: Grænserne er uafhængige af z-score-filteret ovenfor: de virker også
+    #: når 'Fjern outliers' er slået fra. Z-scoren har et matematisk loft på
+    #: √(n−1) og kan derfor aldrig nå tærskel 2 hos en kunde med under seks
+    #: varer — det er netop de kunder grænserne dækker.
+    gm_limit_min_pct: float | None = None
+    gm_limit_max_pct: float | None = None
 
     # Opdeling af plots
     split_by_item_type: bool = True
@@ -427,6 +442,21 @@ class Config:
             raise ValueError(
                 "Outlier-metrik skal være 'begge', 'turnover', 'gm' eller "
                 f"'ingen', fik: {self.outlier_metric!r}"
+            )
+        for label, value in (
+            ("Nedre GM%-grænse", self.gm_limit_min_pct),
+            ("Øvre GM%-grænse", self.gm_limit_max_pct),
+        ):
+            if value is not None and not isinstance(value, (int, float)):
+                raise ValueError(f"{label} skal være et tal eller tom, fik: {value!r}")
+        if (
+            self.gm_limit_min_pct is not None
+            and self.gm_limit_max_pct is not None
+            and self.gm_limit_min_pct >= self.gm_limit_max_pct
+        ):
+            raise ValueError(
+                "Den nedre GM%-grænse skal være mindre end den øvre, fik: "
+                f"{self.gm_limit_min_pct} og {self.gm_limit_max_pct}"
             )
         for name, anchor in (
             ("kundegruppe-plottet", self.group_plot_anchor),

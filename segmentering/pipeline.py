@@ -235,10 +235,20 @@ def analyse_segment(
 
     per_item_filtered: pd.DataFrame | None = None
     outliers: pd.DataFrame | None = None
-    if cfg.remove_outliers:
-        log(f"\n[{segment.label}] Filtrerer outliers (±{cfg.outlier_std_threshold} std):")
+    # De faste GM%-grænser er uafhængige af z-score-filteret og virker også
+    # når 'Fjern outliers' er slået fra.
+    has_gm_limits = (
+        cfg.gm_limit_min_pct is not None or cfg.gm_limit_max_pct is not None
+    )
+    if cfg.remove_outliers or has_gm_limits:
+        log(f"\n[{segment.label}] Frasorterer ekstreme items:")
         split = filter_outliers(
-            per_item, cfg.outlier_std_threshold, cfg.outlier_metric, log
+            per_item,
+            cfg.outlier_std_threshold,
+            cfg.outlier_metric if cfg.remove_outliers else "ingen",
+            log,
+            gm_limit_min_pct=cfg.gm_limit_min_pct,
+            gm_limit_max_pct=cfg.gm_limit_max_pct,
         )
         per_item_filtered, outliers = split.kept, split.removed
         per_group = group_metrics(split.kept, frame, cfg, customer_types)
@@ -294,11 +304,17 @@ def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log:
             (ENGLISH, os.path.join(cfg.paths.directory, ENGLISH_SUBFOLDER))
         )
 
-    parts = result.segment.file_parts
     title = _plot_title(result, cfg)
 
     for texts, directory in editions:
-        paths = replace(cfg.paths, directory=directory)
+        paths = replace(
+            cfg.paths,
+            directory=directory,
+            basename=_basename(cfg, texts),
+            group_role=texts.file_role_group,
+            item_role=texts.file_role_item,
+        )
+        parts = tuple(texts.file_part(part) for part in result.segment.file_parts)
         os.makedirs(directory, exist_ok=True)
         tag = "" if texts is DANISH else " (engelsk)"
         if cfg.draw_group_plot and not result.per_group.empty:
@@ -313,6 +329,22 @@ def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log:
                 figure, paths.item_plot(*parts),
                 f"{result.segment.label} · item{tag}", log,
             )
+
+
+def _basename(cfg: Config, texts: Texts) -> str:
+    """
+    Basisnavnet til filerne i denne sprogudgave.
+
+    Har brugeren selv skrevet et navn, er det deres ord og bliver stående på
+    begge sprog — vi kan ikke vide hvad "Q3_analyse_til_ledelsen" hedder på
+    engelsk. Står feltet på fabriksnavnet, er det derimod vores eget ord, og
+    så oversættes det, så den engelske mappe ikke ender med filer der hedder
+    "kunde_segmentering_customer_group_sinter.html".
+    """
+    chosen = (cfg.output_basename or "").strip()
+    if not chosen or chosen == DANISH.file_basename:
+        return texts.file_basename
+    return chosen
 
 
 # --- Indgangspunkt -----------------------------------------------------------

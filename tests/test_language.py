@@ -208,13 +208,13 @@ def test_the_english_copy_is_off_by_default():
     assert Config().english_copy is False
 
 
-def render(tmp_path, english_copy):
+def render(tmp_path, english_copy, basename="test", parts=()):
     """Tegner kundegruppe-plottet for ét udsnit ned i ``tmp_path``."""
     from segmentering.pipeline import Segment, SegmentResult, render_plots
 
     cfg = Config(
         output_dir=str(tmp_path),
-        output_basename="test",
+        output_basename=basename,
         write_excel=False,
         english_copy=english_copy,
         draw_group_plot=True,
@@ -222,7 +222,7 @@ def render(tmp_path, english_copy):
     )
     result = SegmentResult(
         segment=Segment(
-            label="Alle emner", sheet_prefix="", file_parts=(), frame=items()
+            label="Alle emner", sheet_prefix="", file_parts=parts, frame=items()
         ),
         per_group=groups(),
         per_item=items(),
@@ -232,13 +232,41 @@ def render(tmp_path, english_copy):
     render_plots(result, cfg, DATES, log=lambda *_: None)
 
 
+def written(folder):
+    return sorted(f for f in os.listdir(folder) if f.endswith(".html"))
+
+
 def test_the_english_plots_land_in_their_own_folder(tmp_path):
     render(tmp_path, english_copy=True)
 
-    danish = [f for f in os.listdir(tmp_path) if f.endswith(".html")]
-    english = os.listdir(os.path.join(tmp_path, ENGLISH_SUBFOLDER))
+    danish = written(tmp_path)
+    english = written(os.path.join(tmp_path, ENGLISH_SUBFOLDER))
     assert danish, "den danske graf blev ikke skrevet"
-    assert english == danish, "den engelske mappe har ikke de samme filer"
+    assert len(english) == len(danish), "der mangler en engelsk udgave"
+
+
+def test_the_english_filenames_are_english(tmp_path):
+    """
+    Mappen sendes videre til nogen der ikke læser dansk, så filnavnet må
+    heller ikke være dansk.
+    """
+    render(tmp_path, english_copy=True, basename="kunde_segmentering",
+           parts=("stoebe", "eks"))
+
+    assert written(tmp_path) == ["kunde_segmentering_kundegruppe_stoebe_eks.html"]
+    assert written(os.path.join(tmp_path, ENGLISH_SUBFOLDER)) == [
+        "customer_segmentation_customer_group_cast_existing.html"
+    ]
+
+
+def test_a_basename_the_user_chose_is_left_alone(tmp_path):
+    """Deres eget navn er deres ord — kun fabriksnavnet er vores at oversætte."""
+    render(tmp_path, english_copy=True, basename="Q3_analyse", parts=("sinter",))
+
+    assert written(tmp_path) == ["Q3_analyse_kundegruppe_sinter.html"]
+    assert written(os.path.join(tmp_path, ENGLISH_SUBFOLDER)) == [
+        "Q3_analyse_customer_group_sinter.html"
+    ]
 
 
 def test_nothing_extra_is_written_when_the_option_is_off(tmp_path):
