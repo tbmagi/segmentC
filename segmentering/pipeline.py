@@ -18,7 +18,7 @@ plottet altid til de Excel-faner der hører til samme udsnit.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 import pandas as pd
@@ -38,6 +38,7 @@ from .dataio import (
     turnover_type_mask,
 )
 from .excel_report import ExcelReport, parameter_sheet
+from .language import DANISH, ENGLISH, ENGLISH_SUBFOLDER, Texts
 from .metrics import drop_dead_items, group_metrics, item_metrics, kam_by_group
 from .outliers import filter_outliers
 from . import plots
@@ -270,7 +271,14 @@ def _plot_title(result: SegmentResult, cfg: Config) -> str:
 
 
 def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log: Log) -> None:
-    """Tegner og gemmer de valgte plots for ét udsnit."""
+    """
+    Tegner og gemmer de valgte plots for ét udsnit.
+
+    Er en engelsk udgave slået til, tegnes de samme figurer en gang til med
+    engelske tekster og lægges i en undermappe. Beregningen køres ikke om —
+    de to udgaver bygger på nøjagtig det samme resultat, så de kan ikke komme
+    til at vise forskellige tal.
+    """
     if not (cfg.draw_group_plot or cfg.draw_item_plot):
         return
     if not plots.PLOTLY_AVAILABLE:
@@ -280,20 +288,31 @@ def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log:
         )
         return
 
-    paths = cfg.paths
+    editions: list[tuple[Texts, str]] = [(DANISH, cfg.paths.directory)]
+    if cfg.english_copy:
+        editions.append(
+            (ENGLISH, os.path.join(cfg.paths.directory, ENGLISH_SUBFOLDER))
+        )
+
     parts = result.segment.file_parts
     title = _plot_title(result, cfg)
 
-    if cfg.draw_group_plot and not result.per_group.empty:
-        figure = plots.group_scatter(result.per_group, cfg, dates, title)
-        plots.write_html(
-            figure, paths.group_plot(*parts), f"{result.segment.label} · kundegruppe", log
-        )
-    if cfg.draw_item_plot and not result.plot_items.empty:
-        figure = plots.item_scatter(result.plot_items, cfg, dates, title)
-        plots.write_html(
-            figure, paths.item_plot(*parts), f"{result.segment.label} · item", log
-        )
+    for texts, directory in editions:
+        paths = replace(cfg.paths, directory=directory)
+        os.makedirs(directory, exist_ok=True)
+        tag = "" if texts is DANISH else " (engelsk)"
+        if cfg.draw_group_plot and not result.per_group.empty:
+            figure = plots.group_scatter(result.per_group, cfg, dates, title, texts)
+            plots.write_html(
+                figure, paths.group_plot(*parts),
+                f"{result.segment.label} · kundegruppe{tag}", log,
+            )
+        if cfg.draw_item_plot and not result.plot_items.empty:
+            figure = plots.item_scatter(result.plot_items, cfg, dates, title, texts)
+            plots.write_html(
+                figure, paths.item_plot(*parts),
+                f"{result.segment.label} · item{tag}", log,
+            )
 
 
 # --- Indgangspunkt -----------------------------------------------------------

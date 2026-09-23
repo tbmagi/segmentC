@@ -167,6 +167,16 @@ så den hverken stjæler plads fra punkterne eller kan slås fra ved et uheld.
 **Dobbeltklik** viser kun den ene kunde — enten på selve punktet eller på
 navnet i legenden. Dobbeltklik igen bringer resten tilbage.
 
+Over item-plottet står et **søgefelt til varenumre**. Skriv et nummer, og
+varen fremhæves mens resten af punkterne tones ned — de forsvinder ikke, så
+man kan se hvor varen ligger i forhold til de andre. Flere numre ad gangen
+adskilles med komma eller mellemrum, og der søges på en del af nummeret, så
+`7010` finder alle varer der begynder med det. **Ryd** fjerner markeringen.
+
+Hover-boksen på et item viser **seneste solgt** — den måned varen sidst blev
+solgt til den kunde, skrevet som ÅÅÅÅ-MM. Mangler datoen, står der en
+tankestreg.
+
 Knaprækkerne virker som **filtre der begrænser hinanden**, ikke som
 uafhængige kontakter. Har du slået alt fra på nær én KAM, og slukker og
 tænder du så for en kundetype, kommer kun den ene KAMs kunder tilbage — ikke
@@ -194,6 +204,17 @@ fanerne for et udsnit viser derfor altid de samme tal.
 <basis>_kundegruppe[_sinter|_stoebe][_cn|_dk][_eks].html
 <basis>_item[_sinter|_stoebe][_cn|_dk][_eks].html
 <basis>.xlsx
+```
+
+Sættes **Lav også graferne på engelsk** til i indstillingerne, skrives de
+samme figurer en gang til i undermappen `English/` med engelske tekster —
+samme filnavne, samme tal. Beregningen køres ikke om: de to udgaver bygger på
+ét og samme resultat, så de kan ikke komme til at vise hver sit. Kun graferne
+oversættes; Excel-rapporten og programmet selv er på dansk.
+
+```
+<basis>_kundegruppe_sinter.html          ← dansk
+English/<basis>_kundegruppe_sinter.html  ← samme graf, engelske tekster
 ```
 
 Plotly-biblioteket lægges ind i hver HTML-fil. Det gør filen ca. 4 MB større,
@@ -251,6 +272,7 @@ segmentering/          beregningen – kan bruges helt uden brugerflade
   metrics.py           GM%-grundlag, turnover-vindue, aggregering
   outliers.py          z-score-filter pr. kundegruppe
   plots.py             Plotly-figurerne
+  language.py          grafernes tekster på dansk og engelsk
   excel_report.py      rapportens faneblade og formatering
   pipeline.py          orkestrering af udsnittene
 

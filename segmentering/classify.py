@@ -76,7 +76,7 @@ def classify_customer_type(group_df: pd.DataFrame, dates: ReferenceDates) -> str
     Alt afgøres af datoerne i data — ikke af kolonnen 'Fiscal year'. Den
     kolonne kunne være skrevet "2026/27" ét sted og "2026/2027" et andet, og
     så faldt en ny kunde stiltiende ned i "Eksisterende". Ny-regnskabsåret
-    udledes nu af sin startmåned: 2026/2027 er 05-2026 til og med 04-2027.
+    udledes nu af sin startmåned: 2026/27 er 05-2026 til og med 04-2027.
 
     Reglerne evalueres i denne rækkefølge:
 

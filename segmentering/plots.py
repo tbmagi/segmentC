@@ -27,7 +27,8 @@ from .config import (
     Config,
 )
 from .dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
-from .metrics import ITEM_GM, WINDOW_GROUP, WINDOW_ITEM, sort_kams
+from .language import DANISH, Texts
+from .metrics import ITEM_GM, LAST_ACTIVITY, WINDOW_GROUP, WINDOW_ITEM, sort_kams
 
 try:  # Plotly er en hård afhængighed for plots, men ikke for beregningerne.
     import plotly.colors as plotly_colours
@@ -109,8 +110,9 @@ BUTTON_FIRST_ROW_Y = -BUTTON_FIRST_ROW_PX / PLOT_AREA_PX
 TOGGLE_GUARD = ("marker.opacity", 1)
 
 #: Knappen der slår alle filterrækker fra på én gang. Den står nederst, under
-#: de rækker den nulstiller.
-RESET_LABEL = "↺  Nulstil alle filtre"
+#: de rækker den nulstiller. Teksten hentes fra sproget — denne står kun som
+#: reserve, hvis figuren ikke selv har en nulstil-knap at læse den fra.
+RESET_LABEL = DANISH.reset_button
 
 # Knappernes farver. Grøn = tændt, rød = slukket.
 #
@@ -205,6 +207,7 @@ def band_shapes(
     colours: Mapping[str, str],
     fill_opacity: float,
     label_zones: bool,
+    label_of: Callable[[object], str] = str,
 ) -> tuple[list[dict], list[dict]]:
     """
     Bygger Plotly-shapes og -annotationer for et sæt bånd.
@@ -246,7 +249,7 @@ def band_shapes(
                     y=y0,
                     xref="x",
                     yref="y",
-                    text=str(name),
+                    text=label_of(name),
                     showarrow=False,
                     xanchor="left",
                     yanchor="bottom",
@@ -381,6 +384,10 @@ def toggle_buttons(
     rækkerne begrænse hinanden i stedet for at overskrive hinanden.
 
     Værdier uden spor får ingen knap.
+
+    Knappens tekst ER den værdi der sammenlignes med. På en engelsk graf
+    oversættes derfor både knappen og sporenes ``meta``, så figuren er
+    indbyrdes konsistent; ingen uden for figuren læser de værdier.
     """
     present = [
         value for value in values if any(other == value for other in trace_values)
@@ -605,6 +612,115 @@ _COLOUR_KEY_SCRIPT = """
 """
 
 
+#: JavaScript der lægger et søgefelt over item-plottet.
+#:
+#: Søgningen skjuler ikke punkter — den fremhæver dem. Et spor er én
+#: kundegruppe med mange varer, og Plotly kan kun skjule hele spor ad gangen,
+#: så et enkelt varenummer kan ikke slås fra den vej. I stedet markeres de
+#: fundne punkter med ``selectedpoints``, hvorefter resten tones ned. Så kan
+#: man stadig se HVOR i feltet varen ligger i forhold til alle de andre,
+#: hvilket er hele pointen med at slå den op.
+_SEARCH_SCRIPT = """
+(function () {
+  var gd = document.getElementById('{plot_id}');
+  if (!gd) { return; }
+  var meta = (gd.layout && gd.layout.meta) || {};
+  var t = meta.soegning;
+  if (!t) { return; }
+  var id = 'soegefelt-' + gd.id;
+  if (document.getElementById(id)) { return; }
+
+  var box = document.createElement('div');
+  box.id = id;
+  box.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+    + 'font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
+    + 'font-size:13px;color:#333;padding:10px 14px;margin:0 0 4px 0;'
+    + 'border:1px solid #d8d6d0;border-radius:6px;background:#fbfbfa;'
+    + 'width:max-content;max-width:100%;';
+
+  var label = document.createElement('span');
+  label.textContent = t.label;
+  label.style.cssText = 'font-weight:600;color:#1a4a7a;';
+
+  var input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = t.placeholder;
+  input.style.cssText = 'font:inherit;padding:5px 9px;min-width:230px;'
+    + 'border:1px solid #b8b6b0;border-radius:4px;background:#fff;';
+
+  var clear = document.createElement('button');
+  clear.type = 'button';
+  clear.textContent = t.clear;
+  clear.style.cssText = 'font:inherit;padding:5px 11px;cursor:pointer;'
+    + 'border:1px solid #b8b6b0;border-radius:4px;background:#f2f1ee;';
+
+  var status = document.createElement('span');
+  status.style.cssText = 'color:#52514e;';
+
+  var hint = document.createElement('span');
+  hint.textContent = t.hint;
+  hint.style.cssText = 'color:#8a8880;font-size:12px;';
+
+  [label, input, clear, status, hint].forEach(function (el) { box.appendChild(el); });
+  gd.parentNode.insertBefore(box, gd);
+
+  function terms() {
+    return input.value.split(/[\\s,;]+/)
+      .map(function (s) { return s.trim().toLowerCase(); })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  function search() {
+    var wanted = terms();
+    if (!wanted.length) {
+      status.textContent = '';
+      Plotly.restyle(gd, {selectedpoints: [null]});
+      return;
+    }
+    var found = 0;
+    var picked = gd.data.map(function (trace) {
+      var labels = trace.text || [];
+      var hits = [];
+      for (var i = 0; i < labels.length; i++) {
+        var item = String(labels[i]).toLowerCase();
+        for (var w = 0; w < wanted.length; w++) {
+          if (item.indexOf(wanted[w]) !== -1) { hits.push(i); break; }
+        }
+      }
+      found += hits.length;
+      return hits;
+    });
+    status.textContent = !found ? t.none
+      : (found === 1 ? t.foundOne : t.found.replace('{count}', found));
+    status.style.color = found ? '#12805a' : '#b05b56';
+    Plotly.restyle(gd, {selectedpoints: picked});
+  }
+
+  input.addEventListener('input', search);
+  clear.addEventListener('click', function () { input.value = ''; search(); });
+})();
+"""
+
+
+def search_box(texts: Texts) -> dict:
+    """Teksterne til søgefeltet, som scriptet bygger ud fra."""
+    return {
+        "label": texts.search_label,
+        "placeholder": texts.search_placeholder,
+        "hint": texts.search_hint,
+        "found": texts.search_found,
+        "foundOne": texts.search_found_one,
+        "none": texts.search_none,
+        "clear": texts.search_clear,
+    }
+
+
+def search_script(fig: "go.Figure") -> str | None:
+    """Returnerer søge-scriptet hvis figuren har et søgefelt."""
+    meta = fig.layout.meta or {}
+    return _SEARCH_SCRIPT if meta.get("soegning") else None
+
+
 def colour_key(title: str, items: Sequence[tuple[str, str]]) -> dict:
     """Beskrivelsen af farveforklaringen, som scriptet bygger ud fra."""
     return {
@@ -619,23 +735,39 @@ def colour_key_script(fig: "go.Figure") -> str | None:
     return _COLOUR_KEY_SCRIPT if meta.get("farvekode") else None
 
 
-def reset_button() -> dict:
+def reset_button(texts: Texts = DANISH) -> dict:
     """Knappen der nulstiller alle filterrækker. Håndteres af scriptet."""
-    return dict(label=RESET_LABEL, method="skip", args=[{}])
+    return dict(label=texts.reset_button, method="skip", args=[{}])
+
+
+def _reset_label(fig: "go.Figure") -> str:
+    """
+    Nulstil-knappens tekst, læst af figuren selv.
+
+    Scriptet bruger teksten som sidste udvej til at genkende knappen, og
+    figuren kan være tegnet på engelsk. Læses den af figuren, passer den
+    altid til den udgave scriptet sidder i.
+    """
+    meta = fig.layout.meta or {}
+    index = meta.get("reset")
+    menus = fig.layout.updatemenus or ()
+    if index is None or not (0 <= int(index) < len(menus)):
+        return RESET_LABEL
+    buttons = menus[int(index)].buttons or ()
+    return str(buttons[0].label) if buttons else RESET_LABEL
 
 
 def filter_script(fig: "go.Figure") -> str | None:
     """
     Returnerer filter-scriptet hvis figuren har filterknapper.
 
-    Etiketten på nulstil-knappen sættes ind her, så den kun står ét sted i
-    koden — scriptet genkender knappen på teksten hvis menu-identiteten
-    skulle glippe.
+    Etiketten på nulstil-knappen sættes ind her, så scriptet kan genkende
+    knappen på teksten hvis menu-identiteten skulle glippe.
     """
     meta = fig.layout.meta or {}
     if not meta.get("filters") and not meta.get("krav"):
         return None
-    script = _FILTER_SCRIPT.replace("__RESET_LABEL__", RESET_LABEL)
+    script = _FILTER_SCRIPT.replace("__RESET_LABEL__", _reset_label(fig))
     for token, colour in (
         ("__ON_EDGE__", BUTTON_ON_EDGE), ("__OFF_EDGE__", BUTTON_OFF_EDGE),
         ("__ON__", BUTTON_ON), ("__OFF__", BUTTON_OFF),
@@ -794,24 +926,31 @@ def category_zone_shapes(cfg: Config) -> tuple[list[dict], list[dict]]:
     )
 
 
-def volume_zone_shapes(level: str, cfg: Config) -> tuple[list[dict], list[dict]]:
+def volume_zone_shapes(
+    level: str, cfg: Config, texts: Texts = DANISH
+) -> tuple[list[dict], list[dict]]:
     return band_shapes(
         cfg.volume_zones.get(level, {}),
         VOLUME_ZONE_COLOURS,
         fill_opacity=0.10,
         label_zones=True,
+        label_of=texts.volume_zone,
     )
 
 
 # --- Fælles layout -----------------------------------------------------------
 
 
-def _subtitle(cfg: Config, dates: ReferenceDates, extra: str) -> str:
+def _subtitle(
+    cfg: Config, dates: ReferenceDates, extra: str, texts: Texts = DANISH
+) -> str:
     parts = [
-        f"Eksisterende kunder: {dates.window_start:%m-%Y} – {dates.today:%m-%Y} "
-        f"({cfg.existing_customer_months} mdr.)",
-        f"Turnover-vindue: rullende {cfg.turnover_window_months} mdr. "
-        "fra seneste aktivitet",
+        texts.existing_customers.format(
+            start=f"{dates.window_start:%m-%Y}",
+            end=f"{dates.today:%m-%Y}",
+            months=cfg.existing_customer_months,
+        ),
+        texts.turnover_window.format(months=cfg.turnover_window_months),
     ]
     if extra:
         parts.append(extra)
@@ -855,6 +994,7 @@ def _axes(
     y_title: str,
     x_values: Sequence[float] = (),
     y_values: Sequence[float] = (),
+    texts: Texts = DANISH,
 ) -> dict:
     """
     Akserne. Skalaen er fast: X lineær, Y logaritmisk.
@@ -867,7 +1007,7 @@ def _axes(
     """
     _ = cfg  # akserne afhænger ikke længere af indstillinger
     x_axis = dict(
-        title="Gross Margin (%)",
+        title=texts.x_axis,
         type="linear",
         gridcolor=GRID_COLOUR,
     )
@@ -894,6 +1034,7 @@ def group_scatter(
     cfg: Config,
     dates: ReferenceDates,
     title_suffix: str = "",
+    texts: Texts = DANISH,
 ) -> "go.Figure":
     """
     Tegner kundegruppe-plottet: ét punkt pr. kundegruppe.
@@ -943,18 +1084,19 @@ def group_scatter(
     for row in ordered.to_dict("records"):
         name = row[GROUP]
         category = str(row.get("Kundekategori") or "-")
-        label = category if category != "-" else "Ingen kategori"
+        label = category if category != "-" else texts.no_category
         if category not in category_order:
             category_order.append(category)
 
         customer_type = row.get("Kundetype")
+        shown_type = texts.customer_type(customer_type)
         segment = row.get(INDUSTRY_SEGMENT)
         segment = segment if pd.notna(segment) else None
         kam = row.get(KAM) if has_kam else None
         kam = kam if kam is not None and pd.notna(kam) else None
 
         trace_categories.append(category)
-        trace_types.append(customer_type)
+        trace_types.append(shown_type)
         trace_segments.append(segment)
         trace_kams.append(kam)
 
@@ -972,15 +1114,15 @@ def group_scatter(
         # Ét punkt pr. spor, så hover-teksten kan skrives færdig med det samme.
         hover = [
             f"<b>{name}</b>",
-            "GM%: %{x:.1f}%",
-            "Turnover: %{y:,.0f} DKK",
-            f"Kundetype: {customer_type}",
-            f"Kategori: {category}",
+            texts.hover_gm + ": %{x:.1f}%",
+            texts.hover_turnover + ": %{y:,.0f} DKK",
+            f"{texts.hover_customer_type}: {shown_type}",
+            f"{texts.hover_category}: {category}",
         ]
         if segment is not None:
-            hover.append(f"Industry segment: {segment}")
+            hover.append(f"{texts.hover_segment}: {segment}")
         if kam is not None:
-            hover.append(f"KAM: {kam}")
+            hover.append(f"{texts.hover_kam}: {kam}")
 
         fig.add_trace(
             go.Scatter(
@@ -989,12 +1131,12 @@ def group_scatter(
                 mode="markers+text",
                 name=str(name),
                 legendgroup=category,
-                legendgrouptitle_text=f"Kategori {label}",
+                legendgrouptitle_text=texts.category_group.format(category=label),
                 text=[str(name)],
                 textposition="top right",
                 textfont=dict(size=9),
                 meta={
-                    "kundetype": customer_type,
+                    "kundetype": shown_type,
                     "kategori": category,
                     "kam": kam,
                 },
@@ -1009,25 +1151,28 @@ def group_scatter(
 
     shapes, annotations = category_zone_shapes(cfg)
 
-    types_present = [t for t in CUSTOMER_TYPE_ORDER if t in trace_types]
+    types_present = [
+        texts.customer_type(t) for t in CUSTOMER_TYPE_ORDER
+        if texts.customer_type(t) in trace_types
+    ]
     button_groups: list[tuple[str, str | None, list[dict]]] = [
-        ("Vis/skjul kundetype:", "kundetype", toggle_buttons(types_present, trace_types)),
-        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
+        (texts.row_customer_type, "kundetype", toggle_buttons(types_present, trace_types)),
+        (texts.row_category, "kategori", toggle_buttons(category_order, trace_categories)),
     ]
     if has_kam and kam_values:
         button_groups.append(
-            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+            (texts.row_kam, "kam", toggle_buttons(kam_values, trace_kams))
         )
     if has_industry and segments and not colour_by_segment:
         button_groups.append(
             (
-                "Fremhæv branche:",
+                texts.row_segment,
                 None,  # fremhæver kun, filtrerer ikke
                 _segment_highlight_buttons(segments, trace_segments),
             )
         )
     # Nulstil står nederst, under de rækker den nulstiller.
-    button_groups.append(("", RESET_DIMENSION, [reset_button()]))
+    button_groups.append(("", RESET_DIMENSION, [reset_button(texts)]))
 
     menus, row_labels, button_rows, dimensions = stack_button_rows(
         button_groups, y_start=BUTTON_FIRST_ROW_Y
@@ -1038,27 +1183,30 @@ def group_scatter(
     # farven RENT FAKTISK følger — kundetype eller branche.
     if colour_by_segment:
         key = colour_key(
-            "Farve = Industry segment:",
+            texts.key_segment,
             [(str(segment), segment_colours[segment]) for segment in segments],
         )
     else:
         key = colour_key(
-            "Farve = kundetype:",
-            [(t, CUSTOMER_TYPE_COLOURS[t]) for t in types_present
-             if t in CUSTOMER_TYPE_COLOURS],
+            texts.key_customer_type,
+            [
+                (texts.customer_type(t), CUSTOMER_TYPE_COLOURS[t])
+                for t in CUSTOMER_TYPE_ORDER
+                if texts.customer_type(t) in trace_types
+            ],
         )
 
-    subtitle_extra = title_suffix
+    subtitle_extra = texts.segment_label(title_suffix)
     if has_industry and not colour_by_segment:
         subtitle_extra = "  |  ".join(
-            part for part in (subtitle_extra, "Kant = Industry segment") if part
+            part for part in (subtitle_extra, texts.edge_is_segment) if part
         )
 
     fig.update_layout(
         title=dict(
             text=(
-                "Kundesegmentering – Kundegruppe<br>"
-                f"<sup>{_subtitle(cfg, dates, subtitle_extra)}</sup>"
+                f"{texts.group_title}<br>"
+                f"<sup>{_subtitle(cfg, dates, subtitle_extra, texts)}</sup>"
             ),
             font=dict(size=13),
         ),
@@ -1067,7 +1215,7 @@ def group_scatter(
         updatemenus=number_menus(menus),
         meta={**filter_metadata(dimensions), "farvekode": key},
         legend=dict(
-            title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
+            title=texts.legend_title,
             itemclick="toggle",
             itemdoubleclick="toggleothers",
             groupclick="toggleitem",
@@ -1080,9 +1228,10 @@ def group_scatter(
         height=figure_height(button_rows),
         **_axes(
             cfg,
-            f"Samlet Turnover DKK ({cfg.turnover_window_months} mdr. vindue)",
+            texts.group_y_axis.format(months=cfg.turnover_window_months),
             x_values=(data["samlet_GM"] * 100).tolist(),
             y_values=data["samlet_turnover_window"].tolist(),
+            texts=texts,
         ),
     )
     return fig
@@ -1136,6 +1285,7 @@ def item_scatter(
     cfg: Config,
     dates: ReferenceDates,
     title_suffix: str = "",
+    texts: Texts = DANISH,
 ) -> "go.Figure":
     """
     Tegner item-plottet: ét punkt pr. (kundegruppe, item no.).
@@ -1175,7 +1325,7 @@ def item_scatter(
         if block.empty:
             continue
         category = categories_by_group.get(name, "-")
-        label = category if category != "-" else "Ingen kategori"
+        label = category if category != "-" else texts.no_category
         if category not in category_order:
             category_order.append(category)
         trace_categories.append(category)
@@ -1191,7 +1341,7 @@ def item_scatter(
                 mode="markers+text",
                 name=str(name),
                 legendgroup=category,
-                legendgrouptitle_text=f"Kategori {label}",
+                legendgrouptitle_text=texts.category_group.format(category=label),
                 text=block[ITEM_NO].astype(str),
                 textposition="top right",
                 textfont=dict(size=8),
@@ -1201,15 +1351,22 @@ def item_scatter(
                     color=group_colours[name],
                     line=dict(color="black", width=0.4),
                 ),
-                customdata=block[[GROUP]].values,
+                # Søgningen markerer de fundne punkter; resten tones ned, så
+                # man kan se hvor varen ligger i forhold til alle de andre.
+                selected=dict(marker=dict(size=13, opacity=1)),
+                unselected=dict(marker=dict(opacity=0.12)),
+                customdata=np.column_stack(
+                    [block[GROUP].astype(str), _last_sold(block)]
+                ),
                 hovertemplate=(
                     "<b>%{text}</b><br>"
-                    "Kundegruppe: %{customdata[0]}<br>"
-                    f"Kategori: {category}<br>"
-                    + (f"KAM: {kam}<br>" if kam is not None else "")
-                    + "GM%: %{x:.1f}%<br>"
-                    "Turnover: %{y:,.0f} DKK<br>"
-                    "<extra></extra>"
+                    f"{texts.hover_customer_group}: %{{customdata[0]}}<br>"
+                    f"{texts.hover_category}: {category}<br>"
+                    + (f"{texts.hover_kam}: {kam}<br>" if kam is not None else "")
+                    + f"{texts.hover_gm}: %{{x:.1f}}%<br>"
+                    + f"{texts.hover_turnover}: %{{y:,.0f}} DKK<br>"
+                    + f"{texts.hover_last_sold}: %{{customdata[1]}}<br>"
+                    + "<extra></extra>"
                 ),
             )
         )
@@ -1221,21 +1378,21 @@ def item_scatter(
         if category and category[0] in cfg.volume_zones
     ]
     default_level = present[0] if present else (levels[0] if levels else "A")
-    shapes, zone_annotations = volume_zone_shapes(default_level, cfg)
+    shapes, zone_annotations = volume_zone_shapes(default_level, cfg, texts)
 
     # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
     # så KAM — og nederst nulstil-knappen.
-    level_label = "Volumenkrav:"
-    level_names = [f"Krav {level}" for level in levels]
+    level_label = texts.row_level
+    level_names = [texts.level_button.format(level=level) for level in levels]
 
     button_groups: list[tuple[str, str | None, list[dict]]] = [
-        ("Vis/skjul kategori:", "kategori", toggle_buttons(category_order, trace_categories)),
+        (texts.row_category, "kategori", toggle_buttons(category_order, trace_categories)),
     ]
     if has_kam and kam_values:
         button_groups.append(
-            ("Vis/skjul KAM:", "kam", toggle_buttons(kam_values, trace_kams))
+            (texts.row_kam, "kam", toggle_buttons(kam_values, trace_kams))
         )
-    button_groups.append(("", RESET_DIMENSION, [reset_button()]))
+    button_groups.append(("", RESET_DIMENSION, [reset_button(texts)]))
 
     # Alle rækker — også kravrækken — begynder ved den bredeste overskrift, så
     # knapperne står på linje i stedet for trappeformet.
@@ -1270,7 +1427,7 @@ def item_scatter(
 
     level_buttons = []
     for level, name in zip(levels, level_names):
-        level_shapes, level_annotations = volume_zone_shapes(level, cfg)
+        level_shapes, level_annotations = volume_zone_shapes(level, cfg, texts)
         level_buttons.append(
             dict(
                 label=name,
@@ -1306,8 +1463,8 @@ def item_scatter(
     fig.update_layout(
         title=dict(
             text=(
-                "Kundesegmentering – Item scatter<br>"
-                f"<sup>{_subtitle(cfg, dates, title_suffix)}</sup>"
+                f"{texts.item_title}<br>"
+                f"<sup>{_subtitle(cfg, dates, texts.segment_label(title_suffix), texts)}</sup>"
             ),
             font=dict(size=13),
         ),
@@ -1318,10 +1475,11 @@ def item_scatter(
             **filter_metadata(dimensions),
             "krav": level_menus,
             "valgt": chosen_level,
+            "soegning": search_box(texts),
         },
         margin=dict(t=PLOT_TOP_MARGIN, b=button_area_margin(button_rows)),
         legend=dict(
-            title="Kunder (klik = vis/skjul enkelt kunde · knap = hel blok)",
+            title=texts.legend_title,
             itemclick="toggle",
             itemdoubleclick="toggleothers",
             groupclick="toggleitem",
@@ -1333,12 +1491,26 @@ def item_scatter(
         height=figure_height(button_rows),
         **_axes(
             cfg,
-            f"Turnover DKK – item niveau ({cfg.turnover_window_months} mdr. vindue)",
+            texts.item_y_axis.format(months=cfg.turnover_window_months),
             x_values=(data[ITEM_GM] * 100).tolist(),
             y_values=data[WINDOW_ITEM].tolist(),
+            texts=texts,
         ),
     )
     return fig
+
+
+def _last_sold(block: pd.DataFrame) -> list[str]:
+    """
+    Seneste salgsmåned pr. vare, skrevet som ÅÅÅÅ-MM til hover-boksen.
+
+    Mangler datoen — hvilket den ikke burde, men data er data — vises en
+    tankestreg frem for teksten "NaT".
+    """
+    if LAST_ACTIVITY not in block.columns:
+        return ["–"] * len(block)
+    months = pd.to_datetime(block[LAST_ACTIVITY], errors="coerce")
+    return [("–" if pd.isna(m) else f"{m:%Y-%m}") for m in months]
 
 
 def _group_categories(
@@ -1383,7 +1555,9 @@ INCLUDE_PLOTLYJS = True
 
 
 def write_html(fig: "go.Figure", path: str, label: str, log: Log = print) -> None:
-    scripts = [s for s in (colour_key_script(fig), filter_script(fig)) if s]
+    scripts = [
+        s for s in (search_script(fig), colour_key_script(fig), filter_script(fig)) if s
+    ]
     pio.write_html(
         fig, path, include_plotlyjs=INCLUDE_PLOTLYJS, post_script=scripts or None
     )

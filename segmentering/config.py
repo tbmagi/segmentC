@@ -59,7 +59,7 @@ def todays_reference_date(today: date | None = None) -> str:
     return f"{today.month:02d}-{today.year}"
 
 
-#: Den måned regnskabsåret begynder i. 5 = maj, så 2026/2027 løber fra
+#: Den måned regnskabsåret begynder i. 5 = maj, så 2026/27 løber fra
 #: 05-2026 til og med 04-2027.
 FISCAL_YEAR_START_MONTH = 5
 
@@ -68,11 +68,11 @@ def todays_fiscal_year(
     today: date | None = None, start_month: int = FISCAL_YEAR_START_MONTH
 ) -> str:
     """
-    Det regnskabsår dagen ligger i, skrevet som ÅÅÅÅ/ÅÅÅÅ.
+    Det regnskabsår dagen ligger i, skrevet som ÅÅÅÅ/ÅÅ.
 
     Regnskabsåret følger ikke kalenderåret: med start i maj hører januar til
     april til det år der begyndte året før. Er det 10-02-2026, er man altså
-    stadig i 2025/2026 — ikke i 2026/2027. Regnes der forkert her, bliver
+    stadig i 2025/26 — ikke i 2026/27. Regnes der forkert her, bliver
     hele årets nye kunder klassificeret som noget andet.
     """
     today = today or date.today()
@@ -317,6 +317,9 @@ class Config:
     fiscal_year_start_month: int = FISCAL_YEAR_START_MONTH
 
     # Frasortering
+    #: Skriv også en engelsk udgave af graferne i en undermappe.
+    english_copy: bool = False
+
     excluded_customer_groups: list[str] = field(default_factory=lambda: ["FJ"])
     excluded_turnover_types: list[str] = field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TURNOVER_TYPES)

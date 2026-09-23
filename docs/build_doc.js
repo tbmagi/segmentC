@@ -393,7 +393,7 @@ add(
       ],
       [
         "Ny-regnskabsår",
-        "Regnskabsåret der bruges til at finde NYE kunder, på formen ÅÅÅÅ/ÅÅÅÅ. Udfyldes automatisk.",
+        "Regnskabsåret der bruges til at finde NYE kunder, på formen ÅÅÅÅ/ÅÅ. Udfyldes automatisk.",
       ],
     ],
     [26, 74]
@@ -620,7 +620,8 @@ add(
   ),
   note(
     "Pas på formatet:",
-    "ny-regnskabsåret skrives ÅÅÅÅ/ÅÅÅÅ, fx 2026/2027. Hvilken måned året " +
+    "ny-regnskabsåret skrives ÅÅÅÅ/ÅÅ, fx 2026/27 — samme form som " +
+      "salgsudtrækket bruger. Hvilken måned året " +
       "begynder i sættes under Indstillinger → Kundetyper; som udgangspunkt " +
       "er det maj."
   ),
@@ -795,6 +796,32 @@ add(
       "eller kan slås fra ved et uheld. Farvelægges der efter Industry " +
       "segment i stedet, viser farvekoden brancherne."
   ),
+  h2("Søg efter et varenummer"),
+  p(
+    "Over item-grafen er der et søgefelt. Skriv et varenummer, og varen " +
+      "bliver fremhævet, mens resten af punkterne tones ned — de forsvinder " +
+      "ikke, så du kan se hvor varen ligger i forhold til alle de andre. " +
+      "**Ryd** fjerner markeringen igen."
+  ),
+  bullet(
+    "**Flere varer ad gangen:** skriv numrene efter hinanden adskilt af " +
+      "komma eller mellemrum, for eksempel 701234, 712345."
+  ),
+  bullet(
+    "**Dele af et nummer tæller med:** skriver du 7010, fremhæves alle varer " +
+      "hvis nummer indeholder 7010."
+  ),
+  p(
+    "Under feltet står hvor mange varer der blev fundet — eller at ingen " +
+      "varer matcher, hvis nummeret ikke findes i udsnittet."
+  ),
+  h2("Hvad hover-boksen viser"),
+  p(
+    "Kører du musen hen over et punkt, kommer der en boks med kundegruppe, " +
+      "kategori, KAM, GM%, turnover og **seneste solgt** — den måned varen " +
+      "sidst blev solgt til netop den kunde, skrevet som ÅÅÅÅ-MM. Står der " +
+      "en tankestreg, mangler datoen i data."
+  ),
   note(
     "Graferne virker uden internet.",
     "Hele tegnebiblioteket ligger inde i HTML-filen. Derfor fylder hver fil " +
@@ -813,7 +840,7 @@ add(
   table(
     ["Række", "Findes på", "Gør"],
     [
-      ["Vis/skjul kundetype", "kundegruppe-grafen", "slår Eksisterende, Ny eller Tidligere fra"],
+      ["Vis/skjul kundetype", "kundegruppe-grafen", "slår Eksisterende, Ny, Genopstået eller Tidligere fra"],
       ["Vis/skjul kategori", "begge", "slår en hel kategori-blok fra"],
       ["Vis/skjul KAM", "begge", "slår én key account managers kunder fra"],
       ["Fremhæv branche", "kundegruppe-grafen", "tykkere kant på én branche — skjuler intet"],
@@ -910,6 +937,36 @@ add(
   p(
     "Går noget galt undervejs, stopper programmet og viser fejlen i en boks. " +
       "Der skrives ingen logfil."
+  ),
+  h2("En engelsk udgave af graferne"),
+  p(
+    "Skal graferne sendes til en kunde eller en kollega der ikke læser " +
+      "dansk, sættes **Lav også graferne på engelsk** til i indstillingerne. " +
+      "Så skrives de samme grafer en gang til i undermappen English/ — samme " +
+      "filnavne, engelske tekster."
+  ),
+  code([
+    "Kundesegmentering 2026-09-23/",
+    "  kunde_segmentering_kundegruppe_sinter.html      ← dansk",
+    "  kunde_segmentering_item_sinter.html",
+    "  kunde_segmentering.xlsx",
+    "  English/",
+    "    kunde_segmentering_kundegruppe_sinter.html    ← samme graf, engelsk",
+    "    kunde_segmentering_item_sinter.html",
+  ]),
+  p(
+    "Alt i grafen er oversat: titel, akser, knapper, farvekode, søgefelt og " +
+      "hover-boksen. Kundetyperne hedder Existing, New, Revived og Former, " +
+      "og volumenkravene hedder Level A til D. Kundenavne, KAM-initialer og " +
+      "brancher står som de står i data — de er navne, ikke ord der kan " +
+      "oversættes."
+  ),
+  note(
+    "Tallene kan ikke komme til at afvige.",
+    "Analysen køres ikke om for den engelske udgave. De to sæt grafer tegnes " +
+      "af ét og samme resultat, så et punkt ligger nøjagtig samme sted i " +
+      "begge. Det er kun teksten der er forskellig. Excel-rapporten og " +
+      "programmets egen brugerflade er på dansk."
   )
 );
 
@@ -950,7 +1007,7 @@ add(
   table(
     ["Afsnit", "Handler om"],
     [
-      ["Placering af resultatet", "output-mappe og basisnavn på filerne"],
+      ["Placering af resultatet", "output-mappe, basisnavn på filerne og engelsk udgave af graferne"],
       ["Kundetyper", "hvor mange måneder bagud en kunde regnes som eksisterende"],
       ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items, outliers"],
       ["Opdeling af plots", "sinter/støb og DK/CN, og hvilke turnover-typer der hører til hvad"],
@@ -993,7 +1050,7 @@ add(
       ],
       [
         "Ingen kunder er “Ny”",
-        "Ny-regnskabsåret passer ikke med kolonnen “Fiscal year”. Tjek formatet — der skal stå fx 2026/2027.",
+        "Ny-regnskabsåret passer ikke med kolonnen “Fiscal year”. Tjek formatet — der skal stå fx 2026/27.",
       ],
       [
         "Færre kunder end forventet",

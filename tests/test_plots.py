@@ -6,9 +6,11 @@ import pytest
 
 from segmentering.config import CUSTOMER_TYPE_COLOURS, Config
 from segmentering.dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
+from segmentering.language import DANISH
 from segmentering.metrics import (
     GP_SUM,
     ITEM_GM,
+    LAST_ACTIVITY,
     TURNOVER_SUM,
     WINDOW_GROUP,
     WINDOW_ITEM,
@@ -28,6 +30,7 @@ from segmentering.plots import (
     flow_button_menus,
     group_scatter,
     item_scatter,
+    search_script,
     toggle_buttons,
 )
 
@@ -492,3 +495,83 @@ def test_rows_keep_their_height_no_matter_how_many_there_are():
         # Den nederste række skal stadig være inden for figuren.
         lowest = min(m.y for m in layout.updatemenus)
         assert abs(lowest) * area + BUTTON_ROW_PX <= layout.margin.b
+
+
+# --- Søgefeltet og seneste salgsdato -----------------------------------------
+
+
+def items_with_dates():
+    """Tre varer hos to kunder, med hver sin seneste salgsmåned."""
+    rows = [
+        ("KUNDE A", "701001", pd.Timestamp("2026-03-01")),
+        ("KUNDE A", "701002", pd.Timestamp("2025-11-01")),
+        ("KUNDE B", "712345", pd.NaT),
+    ]
+    return pd.DataFrame(
+        [
+            {
+                GROUP: group,
+                ITEM_NO: item,
+                TURNOVER_SUM: 100_000.0,
+                GP_SUM: 30_000.0,
+                WINDOW_ITEM: 400_000.0 + i,
+                WINDOW_GROUP: 400_000.0 + i,
+                ITEM_GM: 0.30,
+                LAST_ACTIVITY: last,
+            }
+            for i, (group, item, last) in enumerate(rows)
+        ]
+    )
+
+
+def test_the_item_plot_offers_a_search_box():
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    box = fig.layout.meta["soegning"]
+    assert box["label"] == DANISH.search_label
+    assert box["placeholder"] == DANISH.search_placeholder
+    assert box["clear"] == DANISH.search_clear
+
+
+def test_only_the_item_plot_has_a_search_box():
+    """Der er intet varenummer at søge efter på kundegruppe-plottet."""
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert "soegning" not in (fig.layout.meta or {})
+    assert search_script(fig) is None
+
+
+def test_the_search_script_is_attached_to_the_item_plot():
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    script = search_script(fig)
+    assert script and "selectedpoints" in script
+
+
+def test_search_dims_the_points_that_do_not_match():
+    """
+    Et enkelt punkt kan ikke skjules — kun hele spor. Derfor markeres de
+    fundne varer, og resten tones ned, så man stadig kan se hvor varen
+    ligger i forhold til de andre.
+    """
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    for trace in fig.data:
+        assert trace.selected.marker.opacity == 1
+        assert trace.unselected.marker.opacity < 0.2
+
+
+def test_the_hover_box_shows_when_the_item_was_last_sold():
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    by_name = {t.name: t for t in fig.data}
+    assert f"{DANISH.hover_last_sold}: %{{customdata[1]}}" in by_name["KUNDE A"].hovertemplate
+    assert list(by_name["KUNDE A"].customdata[:, 1]) == ["2026-03", "2025-11"]
+
+
+def test_a_missing_sales_date_is_shown_as_a_dash():
+    """Data er data: mangler datoen, må der ikke stå "NaT" i hover-boksen."""
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    by_name = {t.name: t for t in fig.data}
+    assert list(by_name["KUNDE B"].customdata[:, 1]) == ["–"]
+
+
+def test_the_hover_box_still_works_without_a_date_column():
+    """Ældre resultater uden kolonnen må ikke vælte plottet."""
+    fig = item_scatter(sample_items(), Config(), DATES)
+    assert set(fig.data[0].customdata[:, 1]) == {"–"}

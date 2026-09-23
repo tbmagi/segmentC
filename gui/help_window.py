@@ -257,6 +257,16 @@ HELP_CONTENT: list[Block] = [
         "forankring = Kunden spørger \"hvor stor er varen i kundens aktuelle "
         "periode?\". Begge tal står i hver sin kolonne i Excel-rapporten.\n\n",
     ),
+    (
+        BODY,
+        "Over item-plottet er der et søgefelt til varenumre. Den søgte vare "
+        "fremhæves, og resten af punkterne tones ned frem for at forsvinde, "
+        "så du kan se hvor varen ligger i forhold til de andre. Flere numre "
+        "ad gangen adskilles med komma eller mellemrum, og der søges på en "
+        "del af nummeret, så 7010 finder alle varer der begynder med det.\n\n"
+        "Kører du musen hen over et punkt, står der også 'Seneste solgt' — "
+        "den måned varen sidst blev solgt til den kunde.\n\n",
+    ),
 
     (HEADING, "Trin 7: Outlier-filter (valgfrit)\n"),
     (
@@ -293,6 +303,14 @@ HELP_CONTENT: list[Block] = [
         "Hvert udsnit — emne-type, geografi og eventuelt 'kun eksisterende "
         "kunder' — får sit eget sæt filer og faner, beregnet forfra på netop "
         "de rækker. Plottet og fanerne for et udsnit viser derfor altid de "
-        "samme tal.\n",
+        "samme tal.\n\n",
+    ),
+    (
+        NOTE,
+        "Er 'Lav også graferne på engelsk' slået til, skrives de samme "
+        "grafer en gang til i undermappen English/ med engelske tekster. "
+        "Beregningen køres ikke om — de to udgaver bygger på ét og samme "
+        "resultat, så de kan ikke vise hver sit tal. Excel-rapporten og "
+        "programmet selv er på dansk.\n",
     ),
 ]

@@ -164,6 +164,7 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std = tk.IntVar()
         self.var_outlier_metric = tk.StringVar()
 
+        self.var_english_copy = tk.BooleanVar()
         self.var_split_item_type = tk.BooleanVar()
         self.var_geo_split = tk.BooleanVar()
         self.var_cn_types = tk.StringVar()
@@ -360,6 +361,20 @@ class SegmenteringApp(tk.Tk):
             "Skriv uden filendelse.",
         ).grid(row=1, column=3, padx=(4, 0))
 
+        ttk.Checkbutton(
+            frame,
+            text="Lav også graferne på engelsk",
+            variable=self.var_english_copy,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 3))
+        help_icon(
+            frame,
+            "Skriver de samme grafer en gang til med engelske tekster i en "
+            "undermappe der hedder “English”.\n\n"
+            "Beregningen køres ikke om — de to udgaver bygger på nøjagtig det "
+            "samme resultat, så de kan ikke vise forskellige tal.\n\n"
+            "Excel-rapporten er ikke med: den bliver på dansk.",
+        ).grid(row=2, column=3, sticky="w", padx=(4, 0))
+
         frame.columnconfigure(1, weight=1)
 
 
@@ -388,7 +403,7 @@ class SegmenteringApp(tk.Tk):
         help_icon(
             frame,
             "Måneden regnskabsåret starter i.\n\n"
-            "Med maj løber 2026/2027 fra 05-2026 til og med 04-2027.\n\n"
+            "Med maj løber 2026/27 fra 05-2026 til og med 04-2027.\n\n"
             "Det er DENNE periode der afgør hvem der er en ny kunde — ikke "
             "kolonnen 'Fiscal year' i Excel-filen. En kunde er 'Ny' hvis HELE "
             "dens historik ligger inden for perioden.\n\n"
@@ -858,6 +873,7 @@ class SegmenteringApp(tk.Tk):
         self.var_outlier_std.set(int(cfg.outlier_std_threshold))
         self.var_outlier_metric.set(cfg.outlier_metric)
 
+        self.var_english_copy.set(cfg.english_copy)
         self.var_split_item_type.set(cfg.split_by_item_type)
         self.var_geo_split.set(cfg.geo_cn or cfg.geo_dk)
         self.var_cn_types.set(", ".join(cfg.cn_turnover_types))
@@ -916,6 +932,7 @@ class SegmenteringApp(tk.Tk):
             remove_outliers=self.var_remove_outliers.get(),
             outlier_std_threshold=float(self.var_outlier_std.get()),
             outlier_metric=self.var_outlier_metric.get(),
+            english_copy=self.var_english_copy.get(),
             split_by_item_type=self.var_split_item_type.get(),
             geo_combined=True,
             geo_cn=geo_split,
