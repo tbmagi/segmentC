@@ -285,10 +285,15 @@ HELP_CONTENT: list[Block] = [
     ),
     (
         NOTE,
+        "Grænsen kender ikke til kundens størrelse: en kunde med én vare "
+        "under grænsen mister den vare, ligesom en kunde med halvtreds "
+        "ville.\n\n"
         "En frasorteret vare tæller IKKE med i kundens omsætning, GP eller "
-        "GM%. Ligger alle en kundes varer uden for spændet, beholdes de "
-        "urørt, så kunden ikke forsvinder helt ud af analysen. De fjernede "
-        "varer står på Excel-fanen 'Outliers' med en årsag.\n\n",
+        "GM%. Mister en kunde ALLE sine varer, forsvinder den derfor helt "
+        "ud af analysen. Det er med vilje — har kunden kun urimelige tal "
+        "tilbage, ville den blive tegnet et meningsløst sted. Kunden nævnes "
+        "ved navn undervejs, og dens varer står stadig på Excel-fanen "
+        "'Outliers' med en årsag.\n\n",
     ),
 
     (NOTE,

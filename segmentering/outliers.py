@@ -66,10 +66,13 @@ def filter_outliers(
     nøjes med en nedre, en øvre eller begge. Er begge ``None``, røres der
     ingenting.
 
-    Grænserne gælder ved ethvert antal varer — også hos en kunde med én. Den
-    eneste undtagelse er når ALLE en kundes varer ligger uden for spændet:
-    så beholdes de urørt, for ellers ville kunden forsvinde helt ud af
-    analysen, også ud af sin egen omsætning. Det siges i loggen når det sker.
+    Grænsen gælder hver vare for sig og kender ikke til kundens størrelse:
+    en kunde med én vare under grænsen mister den vare, ligesom en kunde med
+    halvtreds ville. Mister en kunde ALLE sine varer, forsvinder den ud af
+    analysen — også ud af den samlede omsætning. Det er med vilje: har kunden
+    kun urimelige tal tilbage, ville den blive tegnet et meningsløst sted.
+    Kunden nævnes ved navn i loggen, og dens varer står stadig på Excel-fanen
+    'Outliers' med en årsag, så det kan efterprøves.
 
     De fjernede varer returneres med en læsbar årsag, så de kan gennemgås på
     Excel-fanen 'Outliers'.
@@ -80,21 +83,19 @@ def filter_outliers(
 
     kept_frames: list[pd.DataFrame] = []
     removed_frames: list[pd.DataFrame] = []
-    kept_whole: list[str] = []
+    emptied: list[str] = []
 
     for name, group_df in per_item.groupby(GROUP, sort=False):
         reasons = _gm_limit_reasons(
             group_df[ITEM_GM], gm_limit_min_pct, gm_limit_max_pct
         )
         outside = reasons != ""
-        if outside.all():
-            kept_whole.append(str(name))
-            kept_frames.append(group_df)
-            continue
         if outside.any():
             removed = group_df[outside].copy()
             removed[OUTLIER_REASON] = reasons[outside]
             removed_frames.append(removed)
+        if outside.all():
+            emptied.append(str(name))
         kept_frames.append(group_df[~outside])
 
     # Tomme rammer sorteres fra: pandas brokker sig over at lægge tomme sammen.
@@ -114,11 +115,14 @@ def filter_outliers(
         f"  GM%-grænser ({limit_text(gm_limit_min_pct, gm_limit_max_pct)}): "
         f"fjernede {len(removed_all)} varer, beholder {len(kept)} varer"
     )
-    for name in kept_whole:
+    if emptied:
         log(
-            f"    BEMÆRK: alle varer hos '{name}' ligger uden for GM%-spændet "
-            "– kundegruppen er beholdt urørt frem for at forsvinde"
+            f"    ADVARSEL: {len(emptied)} kundegruppe(r) mistede ALLE deres "
+            "varer til GM%-grænsen og indgår derfor ikke i analysen:"
         )
+        for name in emptied:
+            log(f"      - {name}")
+        log("      (varerne står på Excel-fanen 'Outliers' med en årsag)")
     return OutlierSplit(kept=kept, removed=removed_all)
 
 

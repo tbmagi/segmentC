@@ -53,8 +53,6 @@ def test_an_upper_limit_catches_an_impossible_margin():
 
 
 def test_a_blank_limit_means_no_limit_in_that_direction():
-    # Den normale vare skal med, ellers ligger ALLE kundens varer uden for
-    # spændet, og så holder filteret hånden over dem.
     items = make_items(
         [("A", "lav", 100, -5.0), ("A", "høj", 100, 4.0), ("A", "normal", 100, 0.30)]
     )
@@ -90,21 +88,54 @@ def test_a_group_of_any_size_is_checked():
     assert sorted(removed[ITEM_NO]) == ["a2", "b_daarlig"]
 
 
-def test_a_customer_whose_items_are_all_outside_is_left_alone():
-    """Ellers ville kunden forsvinde helt — også ud af sin egen omsætning."""
-    items = make_items([("A", "1", 100, -5.0), ("A", "2", 100, -6.0)])
-    beskeder: list[str] = []
-    kept, removed = filter_outliers(items, beskeder.append, gm_limit_min_pct=-50)
-    assert removed.empty
-    assert list(kept[ITEM_NO]) == ["1", "2"]
-    assert any("'A'" in m and "uden for GM%-spændet" in m for m in beskeder), beskeder
-
-
-def test_a_customer_with_one_bad_item_and_nothing_else_is_left_alone():
+def test_a_customer_with_only_one_item_is_filtered_too():
+    """
+    Grænsen kender ikke til kundens størrelse. Har kunden kun én vare, og
+    ligger den under grænsen, ryger den — ligesom hos en kunde med halvtreds.
+    """
     items = make_items([("A", "1", 100, -5.0), ("B", "2", 100, 0.30)])
     kept, removed = filter_outliers(items, QUIET, gm_limit_min_pct=-50)
-    assert removed.empty
-    assert sorted(kept[ITEM_NO]) == ["1", "2"]
+    assert list(removed[ITEM_NO]) == ["1"]
+    assert list(kept[ITEM_NO]) == ["2"]
+    assert "A" not in list(kept[GROUP]), "kundegruppen skulle være væk"
+
+
+def test_a_customer_can_lose_every_item_it_has():
+    items = make_items([("A", "1", 100, -5.0), ("A", "2", 100, -6.0),
+                        ("B", "3", 100, 0.30)])
+    kept, removed = filter_outliers(items, QUIET, gm_limit_min_pct=-50)
+    assert sorted(removed[ITEM_NO]) == ["1", "2"]
+    assert list(kept[GROUP]) == ["B"]
+
+
+def test_an_emptied_customer_is_named_in_the_log():
+    """
+    Kunden forsvinder ud af analysen og ud af den samlede omsætning, så det
+    må ikke ske i stilhed.
+    """
+    items = make_items([("A", "1", 100, -5.0), ("B", "2", 100, 0.30)])
+    beskeder: list[str] = []
+    filter_outliers(items, beskeder.append, gm_limit_min_pct=-50)
+    samlet = "\n".join(beskeder)
+    assert "ADVARSEL" in samlet, samlet
+    assert "A" in samlet
+    assert "Outliers" in samlet, "der står ikke hvor varerne kan findes"
+
+
+def test_nothing_is_said_when_no_customer_is_emptied():
+    items = make_items([("A", "1", 100, 0.30), ("A", "2", 100, -5.0)])
+    beskeder: list[str] = []
+    filter_outliers(items, beskeder.append, gm_limit_min_pct=-50)
+    assert not any("ADVARSEL" in m for m in beskeder), beskeder
+
+
+def test_every_customer_can_be_emptied_without_breaking():
+    """Yderste tilfælde: der er ingenting tilbage at lægge sammen."""
+    items = make_items([("A", "1", 100, -5.0), ("B", "2", 100, -6.0)])
+    kept, removed = filter_outliers(items, QUIET, gm_limit_min_pct=-50)
+    assert kept.empty
+    assert list(kept.columns) == list(items.columns), "kolonnerne gik tabt"
+    assert sorted(removed[ITEM_NO]) == ["1", "2"]
 
 
 def test_groups_are_handled_independently():

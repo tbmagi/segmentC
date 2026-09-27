@@ -670,12 +670,17 @@ add(
       "dækningsbidraget er større end omsætningen, hvilket ikke kan lade " +
       "sig gøre ved et normalt salg."
   ),
+  p(
+    "Grænsen kender ikke til kundens størrelse. En kunde med én vare under " +
+      "grænsen mister den vare, ligesom en kunde med halvtreds ville."
+  ),
   note(
     "En frasorteret vare tæller ikke med.",
-    "Den ryger også ud af kundens samlede omsætning, GP og GM%. Ligger alle " +
-      "en kundes varer uden for spændet, beholdes de urørt, så kunden ikke " +
-      "forsvinder helt ud af analysen. De fjernede varer står på " +
-      "Excel-fanen Outliers med en årsag."
+    "Den ryger også ud af kundens samlede omsætning, GP og GM%. Mister en " +
+      "kunde alle sine varer, forsvinder den derfor helt ud af analysen — " +
+      "har den kun urimelige tal tilbage, ville den blive tegnet et " +
+      "meningsløst sted. Kunden nævnes ved navn undervejs, og dens varer " +
+      "står stadig på Excel-fanen Outliers med en årsag."
   ),
   h2("Trin 7 — Kundekategori"),
   p(
@@ -1093,7 +1098,7 @@ add(
       ],
       [
         "Færre kunder end forventet",
-        "Perioder efter dags dato er skåret fra som budgettal, eller en kundegruppe står på ekskluder-listen.",
+        "Perioder efter dags dato er skåret fra som budgettal, en kundegruppe står på ekskluder-listen, eller kunden mistede alle sine varer til GM%-grænsen. Det sidste siges undervejs, og varerne står på fanen Outliers.",
       ],
       [
         "En graf er helt tom",

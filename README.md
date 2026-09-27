@@ -207,11 +207,15 @@ der bare er solgt med tab. En øvre grænse omkring 100 % er værd at overveje:
 en GM over 100 % betyder at dækningsbidraget er større end omsætningen, hvilket
 ikke kan lade sig gøre ved et normalt salg.
 
-En frasorteret vare tæller **ikke** med i kundens omsætning, GP eller GM%. De
-fjernede varer står på Excel-fanen `Outliers` med en årsag, så det kan
-efterprøves. Ligger *alle* en kundes varer uden for spændet, beholdes de urørt:
-ellers ville kunden forsvinde helt ud af analysen, også ud af sin egen
-omsætning. Det siges i fremdriftsteksten når det sker.
+Grænsen kender ikke til kundens størrelse. En kunde med én vare under grænsen
+mister den vare, ligesom en kunde med halvtreds ville.
+
+En frasorteret vare tæller **ikke** med i kundens omsætning, GP eller GM%.
+Mister en kunde *alle* sine varer, forsvinder den derfor helt ud af analysen —
+også ud af den samlede omsætning. Det er med vilje: har kunden kun urimelige
+tal tilbage, ville den blive tegnet et meningsløst sted. Kunden nævnes ved navn
+i fremdriftsteksten når det sker, og dens varer står stadig på Excel-fanen
+`Outliers` med en årsag, så det kan efterprøves.
 
 > Der var tidligere også et z-score-filter, der målte hver vare mod kundens
 > øvrige varer. Det er taget ud. Den største z-score der overhovedet kan opstå
