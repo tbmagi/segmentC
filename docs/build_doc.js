@@ -436,7 +436,8 @@ add(
       ["Year-mo", "Perioden, fx 2026-05."],
       ["Turnover DKK", "Omsætning i kroner."],
       ["Local_COGS_DKK", "Vareforbrug i kroner."],
-      ["Local_GP_DKK", "Dækningsbidrag i kroner."],
+      ["Cons_GP_DKK", "Dækningsbidrag i kroner, konsolideret. Bruges som standard."],
+      ["Local_GP_DKK", "Dækningsbidrag i kroner, lokal opgørelse. Kan vælges i stedet."],
       ["Cost", "Kostpris."],
       ["Qty.", "Antal."],
     ],
@@ -626,6 +627,15 @@ add(
       "er det maj."
   ),
   h2("Trin 4 — Gross Margin % pr. vare"),
+  note(
+    "Hvilket dækningsbidrag?",
+    "Som standard bruges kolonnen Cons_GP_DKK, det konsoliderede " +
+      "dækningsbidrag. Vil man i stedet regne på den lokale opgørelse, " +
+      "vælges Local_GP_DKK under Indstillinger → Beregning → " +
+      "Dækningsbidrag. Valget slår igennem både på GM% og på GP-tallene i " +
+      "rapporten. Kun den valgte kolonne skal findes i filen — den anden må " +
+      "gerne stå der og bliver bare ikke brugt."
+  ),
   p(
     "For hvert par af kundegruppe og varenummer findes den seneste måned med " +
       "aktivitet. Som standard er det kun den måned der tæller med i " +
@@ -975,6 +985,36 @@ add(
     "Går noget galt undervejs, stopper programmet og viser fejlen i en boks. " +
       "Der skrives ingen logfil."
   ),
+  h2("Valuta"),
+  p(
+    "Graferne kan vises i **DKK, CNY eller EUR**, og de to udgaver vælges " +
+      "hver for sig under Indstillinger → Valuta: den danske graf kan stå i " +
+      "DKK mens den engelske står i EUR."
+  ),
+  p(
+    "Data er altid i DKK. Beløbene regnes om når figuren tegnes, ikke før, " +
+      "så beregningen selv rører dem ikke. En kundes **kategori kan derfor " +
+      "ikke flytte sig** fordi man skifter valuta — den afgøres af " +
+      "DKK-beløbet mod DKK-grænserne. Både punkter og zoner ganges med den " +
+      "samme kurs, så billedet er identisk; kun tallene på aksen er " +
+      "forskellige."
+  ),
+  p(
+    "Kurserne skrives som “hvor meget svarer 100 DKK til”, fordi det er " +
+      "sådan de står når man slår dem op. De kan opdateres løbende og gemmes " +
+      "sammen med dine øvrige standardværdier."
+  ),
+  code([
+    "100 DKK = 102     CNY      (standard)",
+    "100 DKK =  13,38  EUR      (standard)",
+  ]),
+  note(
+    "Excel-rapporten er altid i DKK.",
+    "Den bliver ikke regnet om. Rapporten er stedet man går hen for at " +
+      "holde et tal op mod kildeudtrækket, og kildeudtrækket er i DKK. " +
+      "Hvilken valuta hver graf blev tegnet i, og hvilke kurser der blev " +
+      "brugt, står på fanen Parametre."
+  ),
   h2("En engelsk udgave af graferne"),
   p(
     "Skal graferne sendes til en kunde eller en kollega der ikke læser " +
@@ -1052,10 +1092,11 @@ add(
     ["Afsnit", "Handler om"],
     [
       ["Placering af resultatet", "output-mappe, basisnavn på filerne og engelsk udgave af graferne"],
+      ["Valuta", "valuta for hver udgave af graferne, og kurserne pr. 100 DKK"],
       ["Kundetyper", "hvor mange måneder bagud en kunde regnes som eksisterende"],
       ["Frasortering", "ekskluderede grupper og typer, nul-rækker, døde items og GM%-grænser"],
       ["Opdeling af plots", "sinter/støb og DK/CN, og hvilke turnover-typer der hører til hvad"],
-      ["Beregning", "turnover-vinduets længde, forankring, vægtet GM%"],
+      ["Beregning", "turnover-vinduets længde, forankring, dækningsbidrag-kolonne, vægtet GM%"],
       ["Grænser og områder", "kategori-grænser og volumenområder"],
     ],
     [30, 70]
@@ -1090,7 +1131,7 @@ add(
     [
       [
         "“Følgende påkrævede kolonner mangler …”",
-        "En kolonne er blevet stavet om i udtrækket. Beskeden viser både hvad der mangles, og hvad der faktisk stod.",
+        "En kolonne er blevet stavet om i udtrækket. Beskeden viser både hvad der mangler, og hvad der faktisk stod. Er det Cons_GP_DKK eller Local_GP_DKK der mangler, er det som regel indstillingen under Beregning → Dækningsbidrag der peger på den forkerte — beskeden siger det.",
       ],
       [
         "Ingen kunder er “Ny”",

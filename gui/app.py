@@ -20,11 +20,13 @@ from segmentering import Config
 from segmentering.config import (
     Band,
     FISCAL_YEAR_START_MONTH,
+    GP_SOURCE_COLUMNS,
     clear_defaults,
     load_defaults,
     save_defaults,
     settings_path,
 )
+from segmentering.currency import BASE_CURRENCY, CURRENCY_CODES
 from segmentering.pipeline import run_analysis
 
 from .help_window import show_help_window
@@ -92,6 +94,32 @@ def parse_band(text: str, label: str) -> Band:
 
 def split_list(text: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _rate_text(value: float | None) -> str:
+    """Skriver en kurs til feltet med dansk decimaltegn."""
+    if value is None:
+        return ""
+    return f"{value:g}".replace(".", ",")
+
+
+def _rate_value(text: str, code: str) -> float:
+    """
+    Læser en kurs fra feltet.
+
+    Både komma og punktum accepteres som decimaltegn: feltet er dansk, men
+    folk taster ofte punktum, og det må ikke koste en fejlbesked.
+    """
+    cleaned = text.strip().replace(",", ".")
+    try:
+        rate = float(cleaned)
+    except ValueError as exc:
+        raise ValueError(
+            f"Kursen for {code} skal være et tal, fik: '{text.strip()}'"
+        ) from exc
+    if rate <= 0:
+        raise ValueError(f"Kursen for {code} skal være større end 0, fik: {rate:g}")
+    return rate
 
 
 def _percent_text(value: float | None) -> str:
@@ -187,6 +215,11 @@ class SegmenteringApp(tk.Tk):
 
         self.var_gm_limit_min = tk.StringVar()
         self.var_gm_limit_max = tk.StringVar()
+        self.var_gp_column = tk.StringVar()
+        self.var_currency = tk.StringVar()
+        self.var_english_currency = tk.StringVar()
+        self.var_rate_cny = tk.StringVar()
+        self.var_rate_eur = tk.StringVar()
 
         self.var_english_copy = tk.BooleanVar()
         self.var_split_item_type = tk.BooleanVar()
@@ -326,6 +359,7 @@ class SegmenteringApp(tk.Tk):
 
         page = ScrollableFrame(window)
         self._build_output_location_section(page)
+        self._build_currency_section(page)
         self._build_dates_section(page)
         self._build_filter_section(page)
         self._build_split_section(page)
@@ -400,6 +434,61 @@ class SegmenteringApp(tk.Tk):
 
         frame.columnconfigure(1, weight=1)
 
+    def _build_currency_section(self, parent: tk.Widget) -> None:
+        frame = section(parent, "Valuta")
+        frame.pack(fill="x", padx=10, pady=5)
+
+        valuta_hjaelp = (
+            "Data er altid i DKK. Beløbene regnes om når grafen tegnes, så "
+            "hverken kundernes kategori eller Excel-rapporten flytter sig af "
+            "et valutaskift — det er kun det tal der står på skærmen.\n\n"
+            "De to udgaver vælges hver for sig: den danske graf kan stå i DKK "
+            "mens den engelske står i EUR eller CNY."
+        )
+        for row, (text, variable) in enumerate(
+            (
+                ("Dansk udgave:", self.var_currency),
+                ("Engelsk udgave:", self.var_english_currency),
+            )
+        ):
+            ttk.Label(frame, text=text).grid(row=row, column=0, sticky="w", pady=3)
+            ttk.Combobox(
+                frame, textvariable=variable, width=6,
+                values=list(CURRENCY_CODES), state="readonly",
+            ).grid(row=row, column=1, sticky="w", padx=5)
+        help_icon(frame, valuta_hjaelp).grid(row=0, column=2, sticky="w", padx=(4, 0))
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=2, column=0, columnspan=4, sticky="ew", pady=6
+        )
+        heading(frame, "Kurser pr. 100 DKK:").grid(
+            row=3, column=0, columnspan=4, sticky="w", pady=(0, 1)
+        )
+        kurser = ttk.Frame(frame)
+        kurser.grid(row=4, column=0, columnspan=4, sticky="ew", padx=(15, 0), pady=(0, 3))
+
+        for column, (code, variable) in enumerate(
+            (("CNY", self.var_rate_cny), ("EUR", self.var_rate_eur))
+        ):
+            ttk.Label(kurser, text="100 DKK =").grid(
+                row=0, column=column * 3, sticky="w", pady=3, padx=(0 if column == 0 else 16, 0)
+            )
+            ttk.Entry(kurser, textvariable=variable, width=8).grid(
+                row=0, column=column * 3 + 1, sticky="w", padx=4
+            )
+            ttk.Label(kurser, text=code, foreground=HINT_COLOUR).grid(
+                row=0, column=column * 3 + 2, sticky="w"
+            )
+        help_icon(
+            kurser,
+            "Kurserne skrives som “hvor meget svarer 100 DKK til”, fordi det "
+            "er sådan de står når man slår dem op.\n\n"
+            "100 DKK = 102 CNY betyder altså kursen 1,02.\n\n"
+            "Opdatér dem når kursen har flyttet sig. De gemmes sammen med "
+            "dine øvrige standardværdier.",
+        ).grid(row=0, column=6, sticky="w", padx=(8, 4))
+
+        frame.columnconfigure(1, weight=1)
 
     def _build_dates_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "Kundetyper")
@@ -659,21 +748,46 @@ class SegmenteringApp(tk.Tk):
         ttk.Separator(frame, orient="horizontal").grid(
             row=4, column=0, columnspan=5, sticky="ew", pady=6
         )
-        heading(frame, "Gross Margin % (X-aksen):").grid(
+        heading(frame, "Dækningsbidrag:").grid(
             row=5, column=0, columnspan=5, sticky="w", pady=(3, 1)
+        )
+        ttk.Label(frame, text="Hentes fra kolonnen:").grid(
+            row=6, column=0, sticky="w", pady=3
+        )
+        ttk.Combobox(
+            frame, textvariable=self.var_gp_column, width=16,
+            values=list(GP_SOURCE_COLUMNS), state="readonly",
+        ).grid(row=6, column=1, columnspan=2, sticky="w", padx=5)
+        help_icon(
+            frame,
+            "Hvilken kolonne i Excel-filen der bruges som dækningsbidrag. "
+            "Den indgår i både GM% (X-aksen) og GP-tallene i rapporten.\n\n"
+            "  • Cons_GP_DKK  : det konsoliderede dækningsbidrag (standard)\n"
+            "  • Local_GP_DKK : den lokale opgørelse\n\n"
+            "Den valgte kolonne SKAL findes i filen. Mangler den, siger "
+            "fejlbeskeden hvilken der blev ledt efter — vælg så den anden.\n\n"
+            "Den fravalgte kolonne må gerne stå i filen; den bliver bare "
+            "ikke brugt.",
+        ).grid(row=6, column=4, sticky="w", padx=(4, 0))
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=7, column=0, columnspan=5, sticky="ew", pady=6
+        )
+        heading(frame, "Gross Margin % (X-aksen):").grid(
+            row=8, column=0, columnspan=5, sticky="w", pady=(3, 1)
         )
         ttk.Checkbutton(
             frame,
             text="Vægtet GM% over seneste",
             variable=self.var_weighted_gm,
             command=self._update_gm_state,
-        ).grid(row=6, column=0, sticky="w", pady=3)
+        ).grid(row=9, column=0, sticky="w", pady=3)
         self.spin_gm_months = ttk.Spinbox(
             frame, textvariable=self.var_gm_months, from_=2, to=24, increment=1, width=5
         )
-        self.spin_gm_months.grid(row=6, column=1, sticky="w", padx=5)
+        self.spin_gm_months.grid(row=9, column=1, sticky="w", padx=5)
         ttk.Label(frame, text="måneder pr. item").grid(
-            row=6, column=2, sticky="w", padx=(0, 5)
+            row=9, column=2, sticky="w", padx=(0, 5)
         )
         help_icon(
             frame,
@@ -684,7 +798,7 @@ class SegmenteringApp(tk.Tk):
             "Det giver et omsætningsvægtet snit der dæmper støj fra "
             "enkeltmåneder (kampagnepriser, engangsrabatter, valutaudsving).\n\n"
             "Turnover-vinduet (Y-aksen) påvirkes ikke.",
-        ).grid(row=6, column=4, sticky="w", padx=(0, 4))
+        ).grid(row=9, column=4, sticky="w", padx=(0, 4))
 
     def _build_axes_section(self, parent: tk.Widget) -> None:
         frame = section(parent, "Grænser og områder")
@@ -882,6 +996,11 @@ class SegmenteringApp(tk.Tk):
 
         self.var_gm_limit_min.set(_percent_text(cfg.gm_limit_min_pct))
         self.var_gm_limit_max.set(_percent_text(cfg.gm_limit_max_pct))
+        self.var_gp_column.set(cfg.gp_column)
+        self.var_currency.set(cfg.currency)
+        self.var_english_currency.set(cfg.english_currency)
+        self.var_rate_cny.set(_rate_text(cfg.currency_rates.get("CNY")))
+        self.var_rate_eur.set(_rate_text(cfg.currency_rates.get("EUR")))
 
         self.var_english_copy.set(cfg.english_copy)
         self.var_split_item_type.set(cfg.split_by_item_type)
@@ -940,6 +1059,13 @@ class SegmenteringApp(tk.Tk):
             drop_dead_items=self.var_drop_dead_items.get(),
             gm_limit_min_pct=_percent_value(self.var_gm_limit_min.get(), "under"),
             gm_limit_max_pct=_percent_value(self.var_gm_limit_max.get(), "over"),
+            gp_column=self.var_gp_column.get() or defaults.gp_column,
+            currency=self.var_currency.get() or BASE_CURRENCY,
+            english_currency=self.var_english_currency.get() or BASE_CURRENCY,
+            currency_rates={
+                "CNY": _rate_value(self.var_rate_cny.get(), "CNY"),
+                "EUR": _rate_value(self.var_rate_eur.get(), "EUR"),
+            },
             english_copy=self.var_english_copy.get(),
             split_by_item_type=self.var_split_item_type.get(),
             geo_combined=True,

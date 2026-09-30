@@ -16,7 +16,12 @@ from typing import Callable, Iterable
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from .config import Config, fiscal_year_start
+from .config import (
+    DEFAULT_GP_COLUMN,
+    GP_SOURCE_COLUMNS,
+    Config,
+    fiscal_year_start,
+)
 
 Log = Callable[[str], None]
 
@@ -26,12 +31,21 @@ CUSTOMER_GROUP = "Statistics group"
 ITEM_NO = "item no."
 YEAR_MONTH = "year-mo"
 TURNOVER = "Turnover DKK"
-GROSS_PROFIT = "Local_GP_DKK"
 
-#: Kolonner filen skal indeholde. Bemærk at "cost", "Qty." og "Local_COGS_DKK"
-#: ikke indgår i nogen beregning — de kræves fordi de hører til det aftalte
-#: dataudtræk, og et udtræk uden dem er sandsynligvis forkert eksporteret.
-REQUIRED_COLUMNS = [
+#: Det interne navn for dækningsbidraget. Kolonnen i Excel-filen kan hedde to
+#: forskellige ting, og den valgte omdøbes hertil ved indlæsningen, så resten
+#: af pakken kun kender ét navn.
+GROSS_PROFIT = "GP_DKK"
+
+#: ``GP_SOURCE_COLUMNS`` og ``DEFAULT_GP_COLUMN`` defineres i ``config`` for
+#: at undgå en cirkulær import, men hentes herfra hvor kolonnenavne hører
+#: hjemme.
+
+#: Kolonner filen altid skal indeholde. Bemærk at "cost", "Qty." og
+#: "Local_COGS_DKK" ikke indgår i nogen beregning — de kræves fordi de hører
+#: til det aftalte dataudtræk, og et udtræk uden dem er sandsynligvis forkert
+#: eksporteret. Den valgte GP-kolonne lægges til af ``required_columns``.
+BASE_REQUIRED_COLUMNS = [
     CUSTOMER_GROUP,
     ITEM_NO,
     YEAR_MONTH,
@@ -39,8 +53,21 @@ REQUIRED_COLUMNS = [
     "Qty.",
     TURNOVER,
     "Local_COGS_DKK",
-    GROSS_PROFIT,
 ]
+
+
+def required_columns(gp_column: str = DEFAULT_GP_COLUMN) -> list[str]:
+    """De kolonner filen skal have, når dækningsbidraget tages fra ``gp_column``."""
+    if gp_column not in GP_SOURCE_COLUMNS:
+        raise ValueError(
+            "Dækningsbidraget skal hentes fra en af "
+            f"{', '.join(GP_SOURCE_COLUMNS)}, fik: {gp_column!r}"
+        )
+    return [*BASE_REQUIRED_COLUMNS, gp_column]
+
+
+#: De påkrævede kolonner med standardvalget. Bruges hvor valget ikke kendes.
+REQUIRED_COLUMNS = required_columns()
 
 #: Valgfrie kolonner. Findes de ikke, springes den tilhørende funktion over.
 TURNOVER_TYPE = "Turnover type"
@@ -183,10 +210,29 @@ class MissingColumnsError(ValueError):
             "men stavemåden skal ellers passe. Tjek at kolonnen ikke er "
             "omdøbt eller udeladt i udtrækket.",
         ]
+        # Er det GP-kolonnen der mangler, er det som regel ikke udtrækket
+        # der er galt — det er indstillingen der peger på den anden kolonne.
+        savnet_gp = [name for name in self.missing if name in GP_SOURCE_COLUMNS]
+        if savnet_gp:
+            den_anden = next(
+                (c for c in GP_SOURCE_COLUMNS if c not in savnet_gp), None
+            )
+            lines += [
+                "",
+                f"BEMÆRK: {savnet_gp[0]} er den kolonne der er valgt som "
+                "dækningsbidrag under",
+                "Indstillinger → Beregning → Dækningsbidrag.",
+            ]
+            if den_anden and den_anden in self.found:
+                lines.append(
+                    f"Filen indeholder {den_anden} — vælg den i stedet."
+                )
         return "\n".join(lines)
 
 
-def locate_header_row(frame: pd.DataFrame) -> tuple[int | None, list[str]]:
+def locate_header_row(
+    frame: pd.DataFrame, gp_column: str = DEFAULT_GP_COLUMN
+) -> tuple[int | None, list[str]]:
     """
     Finder den række der indeholder kolonneoverskrifterne.
 
@@ -202,9 +248,10 @@ def locate_header_row(frame: pd.DataFrame) -> tuple[int | None, list[str]]:
     peger indekset på den bedste kandidat, så fejlbeskeden kan vise hvad der
     faktisk stod der.
     """
+    wanted = required_columns(gp_column)
     best_row: int | None = None
     best_hits = -1
-    best_missing = list(REQUIRED_COLUMNS)
+    best_missing = list(wanted)
 
     for index in range(len(frame)):
         cells = {
@@ -212,28 +259,36 @@ def locate_header_row(frame: pd.DataFrame) -> tuple[int | None, list[str]]:
             for value in frame.iloc[index].tolist()
             if pd.notna(value)
         }
-        missing = [c for c in REQUIRED_COLUMNS if c.lower() not in cells]
+        missing = [c for c in wanted if c.lower() not in cells]
         if not missing:
             return index, []
-        hits = len(REQUIRED_COLUMNS) - len(missing)
+        hits = len(wanted) - len(missing)
         if hits > best_hits:
             best_row, best_hits, best_missing = index, hits, missing
 
     return best_row, best_missing
 
 
-def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
+def load_sales_data(
+    path: str, log: Log = print, gp_column: str = DEFAULT_GP_COLUMN
+) -> pd.DataFrame:
     """
     Læser Excel-filen, normaliserer kolonnenavne og tilføjer den parsede
     periode-kolonne.
 
     Overskriftsrækken findes automatisk, så det ikke gør noget at tabellen
     starter længere nede i arket.
+
+    ``gp_column`` vælger hvilken kolonne der bruges som dækningsbidrag. Den
+    omdøbes til ``GROSS_PROFIT``, så resten af pakken ikke behøver vide
+    hvilken af de to der blev valgt. Den anden kolonne får lov at blive
+    stående urørt — den indgår bare ikke i nogen beregning.
     """
     log(f"Indlæser: {path}")
+    log(f"  Dækningsbidrag hentes fra kolonnen '{gp_column}'")
     try:
         preview = pd.read_excel(path, header=None, nrows=HEADER_SCAN_ROWS)
-        header_row, missing = locate_header_row(preview)
+        header_row, missing = locate_header_row(preview, gp_column)
         if missing:
             found = (
                 [str(v).strip() for v in preview.iloc[header_row] if pd.notna(v)]
@@ -263,13 +318,17 @@ def load_sales_data(path: str, log: Log = print) -> pd.DataFrame:
 
     # Omdøb til de kanoniske navne, så resten af koden slipper for at lede
     # case-insensitivt. Både påkrævede og valgfrie kolonner normaliseres.
+    wanted = required_columns(gp_column)
     rename_map: dict[str, str] = {}
     missing: list[str] = []
-    for canonical in REQUIRED_COLUMNS + OPTIONAL_COLUMNS:
+    for canonical in wanted + OPTIONAL_COLUMNS:
         found = find_column(df, canonical)
         if found is None:
-            if canonical in REQUIRED_COLUMNS:
+            if canonical in wanted:
                 missing.append(canonical)
+        elif canonical == gp_column:
+            # Den valgte GP-kolonne får det interne navn, uanset hvad den hed.
+            rename_map[found] = GROSS_PROFIT
         elif found != canonical:
             rename_map[found] = canonical
     if missing:

@@ -161,6 +161,12 @@ def parameter_sheet(cfg: Config, dates) -> pd.DataFrame:
         ("Frasortering af døde items", cfg.drop_dead_items),
         ("Frasortering af budgettal efter dags dato", cfg.drop_future_periods),
         ("GM-måneder pr. item", cfg.gm_months),
+        ("Dækningsbidrag hentet fra", cfg.gp_column),
+        ("Valuta, dansk graf", cfg.currency),
+        ("Valuta, engelsk graf", cfg.english_currency if cfg.english_copy else "—"),
+        ("Kurs, 100 DKK = CNY", cfg.currency_rates.get("CNY", "—")),
+        ("Kurs, 100 DKK = EUR", cfg.currency_rates.get("EUR", "—")),
+        ("Beløb i denne rapport", "DKK (uomregnet)"),
         (
             "GM%-grænse, nedre",
             "ingen" if cfg.gm_limit_min_pct is None else f"{cfg.gm_limit_min_pct:g} %",

@@ -272,3 +272,49 @@ def test_a_basename_the_user_chose_is_left_alone(tmp_path):
 def test_nothing_extra_is_written_when_the_option_is_off(tmp_path):
     render(tmp_path, english_copy=False)
     assert not os.path.isdir(os.path.join(tmp_path, ENGLISH_SUBFOLDER))
+
+
+# --- Valuta pr. udgave -------------------------------------------------------
+
+
+def test_each_edition_gets_its_own_currency(tmp_path):
+    """
+    Den danske graf kan stå i DKK mens den engelske står i EUR — det er hele
+    pointen med at kunne vælge dem hver for sig.
+    """
+    from segmentering.pipeline import Segment, SegmentResult, render_plots
+
+    cfg = Config(
+        output_dir=str(tmp_path),
+        output_basename="test",
+        write_excel=False,
+        english_copy=True,
+        currency="DKK",
+        english_currency="EUR",
+        draw_group_plot=True,
+        draw_item_plot=False,
+    )
+    render_plots(
+        SegmentResult(
+            segment=Segment(label="Alle emner", sheet_prefix="", file_parts=(),
+                            frame=items()),
+            per_group=groups(),
+            per_item=items(),
+            per_item_filtered=None,
+            outliers=None,
+        ),
+        cfg,
+        DATES,
+        log=lambda *_: None,
+    )
+
+    def indhold(folder):
+        navn = next(f for f in os.listdir(folder) if f.endswith(".html"))
+        with open(os.path.join(folder, navn), encoding="utf-8") as fil:
+            return fil.read()
+
+    dansk = indhold(tmp_path)
+    engelsk = indhold(os.path.join(tmp_path, ENGLISH_SUBFOLDER))
+    assert "Samlet Turnover DKK" in dansk
+    assert "Total Turnover EUR" in engelsk
+    assert "Turnover EUR" not in dansk

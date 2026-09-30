@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .classify import category_sort_key, classify_customer_category
+from .currency import DKK, Money
 from .config import (
     CATEGORY_COLOURS,
     CUSTOMER_TYPE_COLOURS,
@@ -225,6 +226,7 @@ def band_shapes(
     label_zones: bool,
     label_of: Callable[[object], str] = str,
     scale: "YScale | None" = None,
+    money: Money = DKK,
 ) -> tuple[list[dict], list[dict]]:
     """
     Bygger Plotly-shapes og -annotationer for et sæt bånd.
@@ -241,7 +243,11 @@ def band_shapes(
     # Zonerne er angivet i kroner, men tegnes i aksens koordinater. På en
     # symlog-akse er de to ting ikke det samme, så de skal omregnes med
     # nøjagtig den samme funktion som punkterne.
-    on_axis = scale.point if scale is not None else (lambda v: v)
+    # Grænserne står i DKK i indstillingerne. De omregnes til den viste
+    # valuta FØR de lægges på aksen, så zonen ligger det samme sted i forhold
+    # til punkterne uanset hvilken valuta grafen er i.
+    place = scale.point if scale is not None else (lambda v: v)
+    on_axis = lambda value: place(money.amount(value))
 
     for name, band in bands.items():
         colour = colours.get(name, "#aaaaaa")
@@ -340,7 +346,7 @@ def band_shapes(
                 y=on_axis(y_value),
                 xref="paper",
                 yref="y",
-                text=_danish_thousands(y_value),
+                text=_danish_thousands(money.amount(y_value)),
                 showarrow=False,
                 xanchor="right",
                 yanchor="bottom",
@@ -1012,7 +1018,7 @@ def flow_button_menus(
 
 
 def category_zone_shapes(
-    cfg: Config, scale: "YScale | None" = None
+    cfg: Config, scale: "YScale | None" = None, money: Money = DKK
 ) -> tuple[list[dict], list[dict]]:
     return band_shapes(
         cfg.category_bands,
@@ -1020,11 +1026,16 @@ def category_zone_shapes(
         fill_opacity=0.08,
         label_zones=False,
         scale=scale,
+        money=money,
     )
 
 
 def volume_zone_shapes(
-    level: str, cfg: Config, texts: Texts = DANISH, scale: "YScale | None" = None
+    level: str,
+    cfg: Config,
+    texts: Texts = DANISH,
+    scale: "YScale | None" = None,
+    money: Money = DKK,
 ) -> tuple[list[dict], list[dict]]:
     return band_shapes(
         cfg.volume_zones.get(level, {}),
@@ -1033,6 +1044,7 @@ def volume_zone_shapes(
         label_zones=True,
         label_of=texts.volume_zone,
         scale=scale,
+        money=money,
     )
 
 
@@ -1305,6 +1317,7 @@ def group_scatter(
     dates: ReferenceDates,
     title_suffix: str = "",
     texts: Texts = DANISH,
+    money: Money = DKK,
 ) -> "go.Figure":
     """
     Tegner kundegruppe-plottet: ét punkt pr. kundegruppe.
@@ -1344,9 +1357,14 @@ def group_scatter(
         )
     ]
 
+    # Beløbene omregnes én gang her. Kundens KATEGORI er allerede afgjort i
+    # pipelinen på DKK-beløbet mod DKK-grænserne, så den kan ikke flytte sig
+    # af et valutaskift — valutaen er kun det tal der står på skærmen.
+    turnover = money.amounts(data["samlet_turnover_window"].tolist())
+
     # Skalaen skal kendes inden det første punkt tegnes: er der kunder med
     # nul eller negativ omsætning, tegnes alle punkter på en symlog-akse.
-    scale = YScale.for_values(data["samlet_turnover_window"].tolist())
+    scale = YScale.for_values(turnover.tolist())
 
     fig = go.Figure()
     category_order: list[str] = []
@@ -1389,7 +1407,7 @@ def group_scatter(
         hover = [
             f"<b>{name}</b>",
             texts.hover_gm + ": %{x:.1f}%",
-            texts.hover_turnover + ": %{customdata[0]:,.0f} DKK",
+            f"{texts.hover_turnover}: %{{customdata[0]:,.0f}} {money.code}",
             f"{texts.hover_customer_type}: {shown_type}",
             f"{texts.hover_category}: {category}",
         ]
@@ -1401,9 +1419,9 @@ def group_scatter(
         fig.add_trace(
             go.Scatter(
                 x=[row["samlet_GM"] * 100],
-                y=[scale.point(row["samlet_turnover_window"])],
-                # Hover skal vise kroner, ikke aksens koordinat.
-                customdata=[[row["samlet_turnover_window"]]],
+                y=[scale.point(money.amount(row["samlet_turnover_window"]))],
+                # Hover skal vise beløbet, ikke aksens koordinat.
+                customdata=[[money.amount(row["samlet_turnover_window"])]],
                 mode="markers+text",
                 name=str(name),
                 legendgroup=category,
@@ -1425,7 +1443,7 @@ def group_scatter(
             )
         )
 
-    shapes, annotations = category_zone_shapes(cfg, scale)
+    shapes, annotations = category_zone_shapes(cfg, scale, money)
 
     types_present = [
         texts.customer_type(t) for t in CUSTOMER_TYPE_ORDER
@@ -1504,9 +1522,11 @@ def group_scatter(
         height=figure_height(button_rows, overlays=1),
         **_axes(
             cfg,
-            texts.group_y_axis.format(months=cfg.turnover_window_months),
+            texts.group_y_axis.format(
+                months=cfg.turnover_window_months, currency=money.code
+            ),
             x_values=(data["samlet_GM"] * 100).tolist(),
-            y_values=data["samlet_turnover_window"].tolist(),
+            y_values=turnover.tolist(),
             texts=texts,
             scale=scale,
         ),
@@ -1563,6 +1583,7 @@ def item_scatter(
     dates: ReferenceDates,
     title_suffix: str = "",
     texts: Texts = DANISH,
+    money: Money = DKK,
 ) -> "go.Figure":
     """
     Tegner item-plottet: ét punkt pr. (kundegruppe, item no.).
@@ -1580,9 +1601,13 @@ def item_scatter(
     # Varer uden et tal kan ikke placeres; varer med nul eller negativ
     # omsætning kan — y-aksen bliver symlog når der er nogen.
     data = data[data[WINDOW_ITEM].notna()]
-    scale = YScale.for_values(data[WINDOW_ITEM].tolist())
 
+    # Kategorierne beregnes på DKK-beløbet, inden der omregnes, så en kunde
+    # ligger i samme kategori uanset hvilken valuta grafen vises i.
     categories_by_group, turnover_by_group = _group_categories(data, cfg)
+
+    data = data.assign(**{WINDOW_ITEM: money.amounts(data[WINDOW_ITEM])})
+    scale = YScale.for_values(data[WINDOW_ITEM].tolist())
     customer_groups = sorted(
         data[GROUP].dropna().unique().tolist(),
         key=lambda name: (
@@ -1650,7 +1675,7 @@ def item_scatter(
                     f"{texts.hover_category}: {category}<br>"
                     + (f"{texts.hover_kam}: {kam}<br>" if kam is not None else "")
                     + f"{texts.hover_gm}: %{{x:.1f}}%<br>"
-                    + f"{texts.hover_turnover}: %{{customdata[2]:,.0f}} DKK<br>"
+                    + f"{texts.hover_turnover}: %{{customdata[2]:,.0f}} {money.code}<br>"
                     + f"{texts.hover_last_sold}: %{{customdata[1]}}<br>"
                     + "<extra></extra>"
                 ),
@@ -1664,7 +1689,9 @@ def item_scatter(
         if category and category[0] in cfg.volume_zones
     ]
     default_level = present[0] if present else (levels[0] if levels else "A")
-    shapes, zone_annotations = volume_zone_shapes(default_level, cfg, texts, scale)
+    shapes, zone_annotations = volume_zone_shapes(
+        default_level, cfg, texts, scale, money
+    )
 
     # Knapperne under plottet stables: først kravniveau, så kategori-blokke,
     # så KAM — og nederst nulstil-knappen.
@@ -1715,7 +1742,9 @@ def item_scatter(
 
     level_buttons = []
     for level, name in zip(levels, level_names):
-        level_shapes, level_annotations = volume_zone_shapes(level, cfg, texts, scale)
+        level_shapes, level_annotations = volume_zone_shapes(
+            level, cfg, texts, scale, money
+        )
         level_buttons.append(
             dict(
                 label=name,
@@ -1779,7 +1808,9 @@ def item_scatter(
         height=figure_height(button_rows, overlays=1),
         **_axes(
             cfg,
-            texts.item_y_axis.format(months=cfg.turnover_window_months),
+            texts.item_y_axis.format(
+                months=cfg.turnover_window_months, currency=money.code
+            ),
             x_values=(data[ITEM_GM] * 100).tolist(),
             y_values=data[WINDOW_ITEM].tolist(),
             texts=texts,

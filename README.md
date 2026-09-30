@@ -81,7 +81,13 @@ Filen skal indeholde disse kolonner (navnene matches uafhængigt af store og
 små bogstaver):
 
 `Statistics group`, `Item no.`, `Year-mo`, `Cost`, `Qty.`, `Turnover DKK`,
-`Local_COGS_DKK`, `Local_GP_DKK`
+`Local_COGS_DKK`
+
+Dertil den kolonne der er valgt som **dækningsbidrag** — som standard
+`Cons_GP_DKK`, men `Local_GP_DKK` kan vælges i stedet under *Indstillinger →
+Beregning → Dækningsbidrag*. Kun den valgte skal findes; den anden må gerne
+stå i filen og bliver bare ikke brugt. Mangler den valgte, siger fejlbeskeden
+hvilken der blev ledt efter, og at det er indstillingen der skal ændres.
 
 Disse er valgfrie og aktiverer hver sin funktion:
 
@@ -122,8 +128,10 @@ der mangler, og hvad der faktisk stod i overskriftsrækken.
    Forskellen på `Genopstået` og `Eksisterende` er hullet: begge kan have
    handlet i sidste måned og have gammel historik, men den ene har handlet
    støt hele vejen, den anden har ligget stille i årevis.
-4. **GM% pr. item** – seneste aktivitetsmåned, eller de seneste N måneder
-   summeret hvis vægtet GM% er slået til.
+4. **GM% pr. item** – dækningsbidraget divideret med omsætningen, på den
+   seneste aktivitetsmåned, eller de seneste N måneder summeret hvis vægtet
+   GM% er slået til. Dækningsbidraget hentes fra `Cons_GP_DKK` eller
+   `Local_GP_DKK`, alt efter hvad der er valgt.
 5. **Turnover-vindue** – forankret enten i kundens eller i det enkelte items
    seneste aktivitet. De to plots kan have hver sin forankring.
 6. **GM%-grænser** – varer hvis margin ligger uden for et fast spænd
@@ -257,6 +265,34 @@ nul. Negative rækker — kreditnotaer, returvarer — bliver stående med vilje
 de tælles med i kundens tal og nu også kan ses på plottet. Kun varer helt uden
 et tal udelades, for de kan ikke placeres nogen steder.
 
+## Valuta
+
+Graferne kan vises i **DKK, CNY eller EUR**, og de to udgaver vælges hver for
+sig: den danske graf kan stå i DKK mens den engelske står i EUR.
+
+Data er altid i DKK. Omregningen sker først når figuren tegnes — præcis som
+oversættelsen — så beregningen selv rører den ikke. Det betyder blandt andet at
+en kundes **kategori ikke kan flytte sig** fordi man skifter valuta: kategorien
+afgøres af DKK-beløbet mod DKK-grænserne, og valutaen er kun det tal der står
+på skærmen. Både punkter og zoner ganges med den samme kurs, så billedet er
+identisk — kun tallene på aksen er forskellige.
+
+Kurserne skrives som "hvor meget svarer 100 DKK til", fordi det er sådan de
+står når man slår dem op:
+
+```
+100 DKK = 102    CNY      (standard)
+100 DKK =  13,38 EUR      (standard)
+```
+
+De kan opdateres løbende under *Indstillinger → Valuta* og gemmes sammen med
+dine øvrige standardværdier.
+
+**Excel-rapporten er altid i DKK og bliver ikke regnet om.** Den er stedet man
+går hen for at holde et tal op mod kildeudtrækket, og kildeudtrækket er i DKK.
+Hvilken valuta hver graf blev tegnet i, og hvilke kurser der blev brugt, står
+på fanen `Parametre`.
+
 ## Udsnit og filnavne
 
 Analysen kører ét **udsnit** ad gangen. Udsnittene udspændes af tre valg i
@@ -339,6 +375,7 @@ segmentering/          beregningen – kan bruges helt uden brugerflade
   classify.py          item-type, kundetype, kundekategori
   metrics.py           GM%-grundlag, turnover-vindue, aggregering
   outliers.py          GM%-grænser pr. vare
+  currency.py          valutakurser og omregning
   plots.py             Plotly-figurerne
   language.py          grafernes tekster på dansk og engelsk
   excel_report.py      rapportens faneblade og formatering

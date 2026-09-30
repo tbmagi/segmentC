@@ -28,8 +28,8 @@ class Texts:
     group_title: str
     item_title: str
     x_axis: str
-    group_y_axis: str  # {months}
-    item_y_axis: str  # {months}
+    group_y_axis: str  # {months} {currency}
+    item_y_axis: str  # {months} {currency}
 
     # Undertitel
     existing_customers: str  # {start} {end} {months}
@@ -137,8 +137,8 @@ DANISH = Texts(
     group_title="Kundesegmentering – Kundegruppe",
     item_title="Kundesegmentering – Item",
     x_axis="Gross Margin (%)",
-    group_y_axis="Samlet Turnover DKK ({months} mdr. vindue)",
-    item_y_axis="Turnover DKK – item niveau ({months} mdr. vindue)",
+    group_y_axis="Samlet Turnover {currency} ({months} mdr. vindue)",
+    item_y_axis="Turnover {currency} – item niveau ({months} mdr. vindue)",
     existing_customers="Eksisterende kunder: {start} – {end} ({months} mdr.)",
     turnover_window="Turnover-vindue: rullende {months} mdr. fra seneste aktivitet",
     edge_is_segment="Kant = Industry segment",
@@ -186,8 +186,8 @@ ENGLISH = Texts(
     group_title="Customer segmentation – Customer group",
     item_title="Customer segmentation – Item",
     x_axis="Gross Margin (%)",
-    group_y_axis="Total Turnover DKK ({months} month window)",
-    item_y_axis="Turnover DKK – item level ({months} month window)",
+    group_y_axis="Total Turnover {currency} ({months} month window)",
+    item_y_axis="Turnover {currency} – item level ({months} month window)",
     existing_customers="Existing customers: {start} – {end} ({months} months)",
     turnover_window="Turnover window: rolling {months} months from latest activity",
     edge_is_segment="Outline = Industry segment",

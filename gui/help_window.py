@@ -166,6 +166,13 @@ HELP_CONTENT: list[Block] = [
 
     (HEADING, "Trin 4: Pr. item no. – seneste måned(er)\n"),
     (
+        NOTE,
+        "Dækningsbidraget hentes fra kolonnen Cons_GP_DKK. Vil du i stedet "
+        "regne på den lokale opgørelse, vælges Local_GP_DKK under "
+        "Indstillinger → Beregning → Dækningsbidrag. Valget slår igennem "
+        "både på GM% (X-aksen) og på GP-tallene i rapporten.\n\n",
+    ),
+    (
         BODY,
         "For hvert unikt (kundegruppe, item no.) findes den seneste måned med "
         "aktivitet. Som standard bruges kun den måned til GM-beregningen, og "
@@ -317,6 +324,32 @@ HELP_CONTENT: list[Block] = [
         "kunder' — får sit eget sæt filer og faner, beregnet forfra på netop "
         "de rækker. Plottet og fanerne for et udsnit viser derfor altid de "
         "samme tal.\n\n",
+    ),
+    (HEADING, "Valuta\n"),
+    (
+        BODY,
+        "Graferne kan vises i DKK, CNY eller EUR, og de to udgaver vælges "
+        "hver for sig: den danske graf kan stå i DKK mens den engelske står "
+        "i EUR.\n\n"
+        "Data er altid i DKK. Omregningen sker først når figuren tegnes, så "
+        "beregningen selv rører den ikke. En kundes KATEGORI kan derfor ikke "
+        "flytte sig fordi man skifter valuta — den afgøres af DKK-beløbet "
+        "mod DKK-grænserne. Både punkter og zoner ganges med den samme kurs, "
+        "så billedet er identisk; kun tallene på aksen er forskellige.\n\n"
+        "Kurserne skrives som 'hvor meget svarer 100 DKK til', fordi det er "
+        "sådan de står når man slår dem op:\n\n",
+    ),
+    (
+        TABLE,
+        "    100 DKK = 102     CNY\n"
+        "    100 DKK =  13,38  EUR\n\n",
+    ),
+    (
+        NOTE,
+        "Excel-rapporten er altid i DKK og bliver ikke regnet om. Den er "
+        "stedet man går hen for at holde et tal op mod kildeudtrækket, og "
+        "kildeudtrækket er i DKK. Hvilken valuta hver graf blev tegnet i, og "
+        "hvilke kurser der blev brugt, står på fanen 'Parametre'.\n\n",
     ),
     (
         NOTE,

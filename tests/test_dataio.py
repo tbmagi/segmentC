@@ -9,7 +9,9 @@ from segmentering.dataio import (
     GROUP,
     KAM,
     PERIOD,
+    GROSS_PROFIT,
     REQUIRED_COLUMNS,
+    required_columns,
     MissingColumnsError,
     ReferenceDates,
     apply_row_filters,
@@ -31,7 +33,9 @@ def data_row(group="KUNDE A", item="701234", month="2025-06", turnover=1000.0, *
         "Qty.": 5,
         "Turnover DKK": turnover,
         "Local_COGS_DKK": 600.0,
-        "Local_GP_DKK": 300.0,
+        # Den rigtige fil har begge; indstillingen vælger hvilken der bruges.
+        "Cons_GP_DKK": 300.0,
+        "Local_GP_DKK": 250.0,
     }
     row.update(extra)
     return row
@@ -107,14 +111,14 @@ def test_a_missing_column_is_named_in_the_error(tmp_path):
     ikke bare at noget gik galt.
     """
     rows = [data_row()]
-    del rows[0]["Local_GP_DKK"]
+    del rows[0]["Cons_GP_DKK"]
     path = write_workbook(tmp_path / "mangler.xlsx", rows, junk_rows=3)
     with pytest.raises(MissingColumnsError) as caught:
         load_sales_data(str(path), QUIET)
 
     error = caught.value
-    assert error.missing == ["Local_GP_DKK"]
-    assert "Local_GP_DKK" in str(error)
+    assert error.missing == ["Cons_GP_DKK"]
+    assert "Cons_GP_DKK" in str(error)
     # Beskeden skal også vise hvad der FAKTISK stod, så en stavefejl kan ses
     assert "Turnover DKK" in str(error)
     assert error.header_row == 3
@@ -305,3 +309,63 @@ def test_blank_sorts_last():
 
 def test_kam_sorting_ignores_case():
     assert sort_kams(["pha", "ABC"]) == ["ABC", "pha"]
+
+
+# --- Valget af GP-kolonne ----------------------------------------------------
+
+
+def test_the_consolidated_column_is_the_default(tmp_path):
+    """Cons_GP_DKK er standarden; Local skal vælges til."""
+    path = write_workbook(tmp_path / "begge.xlsx", [data_row()])
+    df = load_sales_data(str(path), QUIET)
+    assert GROSS_PROFIT in df.columns
+    assert df[GROSS_PROFIT].iloc[0] == 300.0, "der blev læst fra den forkerte kolonne"
+
+
+def test_the_local_column_can_be_chosen(tmp_path):
+    path = write_workbook(tmp_path / "begge.xlsx", [data_row()])
+    df = load_sales_data(str(path), QUIET, "Local_GP_DKK")
+    assert df[GROSS_PROFIT].iloc[0] == 250.0
+
+
+def test_the_unchosen_column_is_left_alone(tmp_path):
+    """Den anden kolonne må gerne stå i filen; den bruges bare ikke."""
+    path = write_workbook(tmp_path / "begge.xlsx", [data_row()])
+    df = load_sales_data(str(path), QUIET)
+    assert "Local_GP_DKK" in df.columns, "den fravalgte kolonne blev fjernet"
+    assert "Cons_GP_DKK" not in df.columns, "den valgte blev ikke omdøbt"
+
+
+def test_a_file_with_only_the_local_column_works_when_it_is_chosen(tmp_path):
+    rows = [data_row()]
+    del rows[0]["Cons_GP_DKK"]
+    path = write_workbook(tmp_path / "kun_local.xlsx", rows)
+    df = load_sales_data(str(path), QUIET, "Local_GP_DKK")
+    assert df[GROSS_PROFIT].iloc[0] == 250.0
+
+
+def test_the_error_names_the_column_that_was_chosen(tmp_path):
+    """
+    Er filen uden Cons-kolonnen, skal beskeden sige netop den — så kan man
+    se at det er indstillingen der skal ændres.
+    """
+    rows = [data_row()]
+    del rows[0]["Cons_GP_DKK"]
+    path = write_workbook(tmp_path / "kun_local.xlsx", rows)
+    with pytest.raises(MissingColumnsError) as caught:
+        load_sales_data(str(path), QUIET)
+    assert caught.value.missing == ["Cons_GP_DKK"]
+
+
+def test_the_header_row_is_found_by_the_chosen_column(tmp_path):
+    """Overskriftsrækken må ikke kræve den kolonne man har fravalgt."""
+    rows = [data_row()]
+    del rows[0]["Cons_GP_DKK"]
+    path = write_workbook(tmp_path / "rod.xlsx", rows, junk_rows=5)
+    df = load_sales_data(str(path), QUIET, "Local_GP_DKK")
+    assert len(df) == 1
+
+
+def test_an_unknown_gp_column_is_rejected():
+    with pytest.raises(ValueError, match="Dækningsbidraget"):
+        required_columns("Noget_helt_andet")

@@ -38,6 +38,7 @@ from .dataio import (
     turnover_type_mask,
 )
 from .excel_report import ExcelReport, parameter_sheet
+from .currency import Money, money_for
 from .language import DANISH, ENGLISH, ENGLISH_SUBFOLDER, Texts
 from .metrics import drop_dead_items, group_metrics, item_metrics, kam_by_group
 from .outliers import filter_outliers
@@ -294,15 +295,27 @@ def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log:
         )
         return
 
-    editions: list[tuple[Texts, str]] = [(DANISH, cfg.paths.directory)]
+    # Sprog og valuta vælges hver for sig pr. udgave: den danske graf kan
+    # stå i DKK mens den engelske står i EUR, eller hvad der nu skal sendes.
+    editions: list[tuple[Texts, str, Money]] = [
+        (
+            DANISH,
+            cfg.paths.directory,
+            money_for(cfg.currency, cfg.currency_rates),
+        )
+    ]
     if cfg.english_copy:
         editions.append(
-            (ENGLISH, os.path.join(cfg.paths.directory, ENGLISH_SUBFOLDER))
+            (
+                ENGLISH,
+                os.path.join(cfg.paths.directory, ENGLISH_SUBFOLDER),
+                money_for(cfg.english_currency, cfg.currency_rates),
+            )
         )
 
     title = _plot_title(result, cfg)
 
-    for texts, directory in editions:
+    for texts, directory, money in editions:
         paths = replace(
             cfg.paths,
             directory=directory,
@@ -314,13 +327,17 @@ def render_plots(result: SegmentResult, cfg: Config, dates: ReferenceDates, log:
         os.makedirs(directory, exist_ok=True)
         tag = "" if texts is DANISH else " (engelsk)"
         if cfg.draw_group_plot and not result.per_group.empty:
-            figure = plots.group_scatter(result.per_group, cfg, dates, title, texts)
+            figure = plots.group_scatter(
+                result.per_group, cfg, dates, title, texts, money
+            )
             plots.write_html(
                 figure, paths.group_plot(*parts),
                 f"{result.segment.label} · kundegruppe{tag}", log,
             )
         if cfg.draw_item_plot and not result.plot_items.empty:
-            figure = plots.item_scatter(result.plot_items, cfg, dates, title, texts)
+            figure = plots.item_scatter(
+                result.plot_items, cfg, dates, title, texts, money
+            )
             plots.write_html(
                 figure, paths.item_plot(*parts),
                 f"{result.segment.label} · item{tag}", log,
@@ -367,7 +384,7 @@ def run_analysis(cfg: Config, log: Log = print) -> list[SegmentResult]:
             "Vælg en anden mappe, eller kontrollér at du har skriveadgang."
         ) from exc
 
-    df = load_sales_data(cfg.input_path, log)
+    df = load_sales_data(cfg.input_path, log, cfg.gp_column)
     dates = ReferenceDates.from_config(cfg)
     log(f"Dags dato:           {dates.today:%Y-%m}")
     log(

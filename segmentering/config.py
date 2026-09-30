@@ -19,6 +19,17 @@ from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import date
 from typing import Iterable, Literal, Mapping, Sequence
 
+from .currency import BASE_CURRENCY, CURRENCY_CODES, DEFAULT_RATES
+
+#: De to kolonner i Excel-filen der kan bruges som dækningsbidrag. Cons er
+#: konsolideret og er standarden; Local er den lokale opgørelse.
+#:
+#: Navnene står her og ikke i ``dataio``, hvor de hører hjemme, fordi
+#: ``dataio`` importerer ``Config`` — den anden vej ville give en cirkulær
+#: import. ``dataio`` henter dem herfra og udstiller dem under sine egne navne.
+GP_SOURCE_COLUMNS = ("Cons_GP_DKK", "Local_GP_DKK")
+DEFAULT_GP_COLUMN = GP_SOURCE_COLUMNS[0]
+
 # --- Værdi-domæner for de valgfrie indstillinger -----------------------------
 
 #: Hvor det rullende turnover-vindue forankres.
@@ -311,6 +322,8 @@ class Config:
 
     # Datakilde
     input_path: str = DEFAULT_INPUT_PATH
+    #: Hvilken kolonne i Excel-filen der bruges som dækningsbidrag.
+    gp_column: str = DEFAULT_GP_COLUMN
 
     # Datoer og kundetyper
     reference_date: str = field(default_factory=todays_reference_date)  # "MM-ÅÅÅÅ"
@@ -332,6 +345,16 @@ class Config:
     #: Rækker med en periode efter 'dags dato' er budgettal og udelades.
     #: Slås den fra, indgår budgetrækker i beregningen som var de realiseret.
     drop_future_periods: bool = True
+
+    #: Valuta i den danske udgave af graferne, og i den engelske. Data er i
+    #: DKK; omregningen sker først når figuren tegnes, så hverken kundernes
+    #: kategori eller Excel-rapporten flytter sig af et valutaskift.
+    currency: str = BASE_CURRENCY
+    english_currency: str = BASE_CURRENCY
+    #: Kurser pr. 100 DKK. 100 DKK = 102 CNY betyder altså kursen 1,02.
+    currency_rates: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_RATES)
+    )
 
     # Frasortering af varer med urimelig margin
     #: Fast spænd for GM% i procent. Varer uden for spændet frasorteres.
@@ -431,6 +454,28 @@ class Config:
                 "'Ny-regnskabsår' skal skrives som ÅÅÅÅ/ÅÅ, fx 2026/27. "
                 f"Fik: {self.new_fiscal_year!r}"
             )
+        if self.gp_column not in GP_SOURCE_COLUMNS:
+            raise ValueError(
+                "GP-kolonnen skal være en af "
+                f"{', '.join(GP_SOURCE_COLUMNS)}, fik: {self.gp_column!r}"
+            )
+        for label, code in (
+            ("Valuta", self.currency),
+            ("Valuta (engelsk udgave)", self.english_currency),
+        ):
+            if code not in CURRENCY_CODES:
+                raise ValueError(
+                    f"{label} skal være en af {', '.join(CURRENCY_CODES)}, "
+                    f"fik: {code!r}"
+                )
+        for code in (self.currency, self.english_currency):
+            if code == BASE_CURRENCY:
+                continue
+            rate = self.currency_rates.get(code)
+            if not isinstance(rate, (int, float)) or rate <= 0:
+                raise ValueError(
+                    f"Kursen for {code} skal være et positivt tal, fik: {rate!r}"
+                )
         for label, value in (
             ("Nedre GM%-grænse", self.gm_limit_min_pct),
             ("Øvre GM%-grænse", self.gm_limit_max_pct),
