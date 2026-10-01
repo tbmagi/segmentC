@@ -235,6 +235,12 @@ def band_shapes(
     stiplede referencelinjer ved hver GM%-grænse (lodret) og hver
     turnover-grænse (vandret).
 
+    Zonens navn og tallet på den vandrette linje hænger på selve figuren som
+    en ``label`` frem for at være en annotation. Det er ikke pynt: en
+    annotation tegnes ALTID oven på punkterne, og zonenavnene lagde sig
+    derfor hen over kunder og varenumre. En figur med ``layer="below"``
+    tegnes bag punkterne, og det gør dens etiket også.
+
     Resultatet er rene dicts, så de både kan sættes ved opbygningen af figuren
     og skiftes ud senere via en ``relayout``-knap.
     """
@@ -256,36 +262,27 @@ def band_shapes(
         y1 = on_axis(
             band.turnover_max if band.turnover_max is not None else Y_MAX_ZONE
         )
-        shapes.append(
-            dict(
-                type="rect",
-                xref="x",
-                yref="y",
-                x0=x0,
-                y0=y0,
-                x1=X_MAX_ZONE,
-                y1=y1,
-                fillcolor=colour,
-                opacity=fill_opacity,
-                line=dict(width=0),
-                layer="below",
-            )
+        band_shape = dict(
+            type="rect",
+            xref="x",
+            yref="y",
+            x0=x0,
+            y0=y0,
+            x1=X_MAX_ZONE,
+            y1=y1,
+            fillcolor=colour,
+            opacity=fill_opacity,
+            line=dict(width=0),
+            layer="below",
         )
         if label_zones:
-            annotations.append(
-                dict(
-                    x=x0,
-                    y=y0,
-                    xref="x",
-                    yref="y",
-                    text=label_of(name),
-                    showarrow=False,
-                    xanchor="left",
-                    yanchor="bottom",
-                    font=dict(size=11, color=colour),
-                    bgcolor="rgba(255,255,255,0.6)",
-                )
+            band_shape["label"] = dict(
+                text=label_of(name),
+                textposition="bottom left",
+                font=dict(size=11, color=colour),
+                padding=4,
             )
+        shapes.append(band_shape)
 
     for gm_min in sorted({band.gm_min for band in bands.values()}):
         x_value = gm_min * 100
@@ -338,22 +335,15 @@ def band_shapes(
                 line=dict(color="grey", width=1, dash="dash"),
                 opacity=0.6,
                 layer="below",
+                label=dict(
+                    text=_danish_thousands(money.amount(y_value)),
+                    textposition="end",
+                    yanchor="bottom",
+                    font=dict(size=10, color="grey"),
+                    padding=3,
+                ),
             )
         )
-        annotations.append(
-            dict(
-                x=1.0,
-                y=on_axis(y_value),
-                xref="paper",
-                yref="y",
-                text=_danish_thousands(money.amount(y_value)),
-                showarrow=False,
-                xanchor="right",
-                yanchor="bottom",
-                font=dict(size=10, color="grey"),
-            )
-        )
-
     return shapes, annotations
 
 
@@ -1017,6 +1007,17 @@ def flow_button_menus(
     return menus, rows
 
 
+def category_zone_name(band: object) -> str:
+    """
+    Navnet på en kategori-zone, fx "A+".
+
+    Det farvede felt dækker netop den del af båndet hvor GM% når kravet —
+    altså plus-halvdelen. Minus-halvdelen er det uskraverede område under
+    samme turnover-bånd, så "A+" er det rigtige navn på feltet.
+    """
+    return f"{band}+"
+
+
 def category_zone_shapes(
     cfg: Config, scale: "YScale | None" = None, money: Money = DKK
 ) -> tuple[list[dict], list[dict]]:
@@ -1024,7 +1025,8 @@ def category_zone_shapes(
         cfg.category_bands,
         CATEGORY_COLOURS,
         fill_opacity=0.08,
-        label_zones=False,
+        label_zones=True,
+        label_of=category_zone_name,
         scale=scale,
         money=money,
     )

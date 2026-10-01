@@ -314,6 +314,19 @@ HELP_CONTENT: list[Block] = [
      "et lineært bælte omkring nul. Så kan de også ses, i stedet for at "
      "falde ud af plottet. Hover viser altid kroner.\n\n"),
 
+    (
+        NOTE,
+        "Baggrundsfarverne på graferne er zoner, ikke data. Hver zone har "
+        "sit navn i nederste venstre hjørne — A+, B+, C+, D+ på "
+        "kundegruppe-grafen og Stor/Mellem/Lille volumen på item-grafen — og "
+        "hver vandret streg har sit beløb i højre side.\n\n"
+        "Navnet står med plus, fordi det farvede felt netop dækker den del "
+        "af båndet hvor marginen når kravet. Minus-halvdelen er det "
+        "uskraverede område under samme streg.\n\n"
+        "Teksten hører til baggrunden og tegnes BAG punkterne, så en kunde "
+        "eller et varenummer aldrig bliver dækket af den.\n\n",
+    ),
+
     (HEADING, "Trin 8: Plots og Excel-rapport\n"),
     (
         BODY,

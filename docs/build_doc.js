@@ -811,6 +811,20 @@ add(
     "Baggrundsfarverne er zoner, ikke data. De viser hvor grænserne mellem " +
       "kategorierne går, så det kan ses om en kunde ligger lige på vippen."
   ),
+  p(
+    "Hver zone har sit navn skrevet i nederste venstre hjørne — **A+, B+, " +
+      "C+, D+** på kundegruppe-grafen og **Stor/Mellem/Lille volumen** på " +
+      "item-grafen — og hver vandret streg har sit beløb i højre side. " +
+      "Navnet står med plus, fordi det farvede felt netop dækker den del af " +
+      "båndet hvor marginen når kravet; minus-halvdelen er det uskraverede " +
+      "område under samme streg."
+  ),
+  note(
+    "Teksten ligger bag punkterne.",
+    "Zonenavne og beløb hører til baggrunden, ikke til data, så de tegnes " +
+      "under kunderne og varenumrene. Ligger et punkt oven på et zonenavn, " +
+      "er det punktet man kan se — ikke teksten."
+  ),
   note(
     "Akserne:",
     "X-aksen er lineær og Y-aksen logaritmisk, og det kan ikke laves om. " +

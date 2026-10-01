@@ -30,6 +30,8 @@ from segmentering.plots import (
     Y_MAX_ZONE,
     _segment_highlight_buttons,
     axis_range,
+    category_zone_name,
+    category_zone_shapes,
     colour_key_script,
     first_row_y,
     flow_button_menus,
@@ -767,3 +769,102 @@ def test_the_zones_follow_the_same_scale_as_the_points():
     kanter = [s.y0 for s in fig.layout.shapes if s.y0 is not None]
     assert kanter, "ingen zoner"
     assert all(-20 < float(v) < 20 for v in kanter), kanter
+
+
+# --- Zone-etiketter ----------------------------------------------------------
+
+
+def zone_labels(fig):
+    """Etiketterne der hænger på figurerne — altså dem bag punkterne."""
+    return [s.label.text for s in fig.layout.shapes if s.label and s.label.text]
+
+
+def annotation_texts(fig):
+    """Teksterne i annotationslaget, som altid tegnes FORAN punkterne."""
+    return [a.text for a in fig.layout.annotations if a.text]
+
+
+def test_the_group_plot_names_its_category_zones():
+    fig = group_scatter(groups_with_categories(), Config(), DATES)
+    assert {"A+", "B+", "C+", "D+"} <= set(zone_labels(fig))
+
+
+def test_the_item_plot_names_its_volume_zones():
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    assert "Stor volumen" in zone_labels(fig)
+
+
+def test_the_shaded_area_is_the_plus_half():
+    """
+    Feltet dækker netop den del af båndet hvor GM% når kravet, så "A+" er
+    det rigtige navn — ikke bare "A".
+    """
+    assert category_zone_name("A") == "A+"
+    shapes, _ = category_zone_shapes(Config())
+    a = next(s for s in shapes if s.get("label", {}).get("text") == "A+")
+    assert a["x0"] == Config().category_bands["A"].gm_min * 100
+
+
+def test_both_plots_number_their_horizontal_lines():
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        tal = [t for t in zone_labels(fig) if t.replace(".", "").isdigit()]
+        assert len(tal) >= 3, f"der mangler tal på stregerne: {zone_labels(fig)}"
+
+
+def test_the_labels_are_not_annotations():
+    """
+    En annotation tegnes ALTID oven på punkterne. Zonenavnene lagde sig
+    derfor hen over kunder og varenumre, og det var netop det der skulle
+    laves om — så de må ikke være annotationer.
+    """
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        foran = annotation_texts(fig)
+        for navn in zone_labels(fig):
+            assert navn not in foran, f"'{navn}' ligger stadig foran punkterne"
+
+
+def test_the_zone_shapes_are_drawn_below_the_points():
+    for fig in (
+        group_scatter(groups_with_categories(), Config(), DATES),
+        item_scatter(items_with_dates(), Config(), DATES),
+    ):
+        mærkede = [s for s in fig.layout.shapes if s.label and s.label.text]
+        assert mærkede, "ingen mærkede figurer"
+        assert all(s.layer == "below" for s in mærkede)
+
+
+def test_the_labels_follow_the_currency():
+    """Tallene på stregerne er beløb og skal regnes om som alt andet."""
+    from segmentering.currency import DEFAULT_RATES, money_for
+
+    eur = money_for("EUR", DEFAULT_RATES)
+    fig = group_scatter(groups_with_categories(), Config(), DATES, money=eur)
+    assert "669.000" in zone_labels(fig), zone_labels(fig)
+
+
+def test_the_volume_labels_are_translated():
+    from segmentering.language import ENGLISH
+
+    fig = item_scatter(items_with_dates(), Config(), DATES, texts=ENGLISH)
+    assert "High volume" in zone_labels(fig)
+
+
+def test_the_level_buttons_carry_the_labels_along():
+    """
+    Etiketterne hænger på figurerne, og kravknapperne skifter figurerne ud.
+    Gør de det uden at tage etiketterne med, forsvinder zonenavnene ved
+    første klik.
+    """
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    krav = fig.layout.meta["krav"]
+    for index in krav:
+        menu = fig.layout.updatemenus[index]
+        nye = menu.buttons[0].args[0]["shapes"]
+        navne = [s["label"]["text"] for s in nye if s.get("label")]
+        assert any("volumen" in n for n in navne), (menu.buttons[0].label, navne)

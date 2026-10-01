@@ -169,6 +169,18 @@ valgte er grøn og de fravalgte røde. Fremhæv-knapperne bliver hverken grønne
 eller røde: de skjuler ingenting. De to nuancer er også forskellige i lyshed,
 så tilstanden kan aflæses af en rødgrønt farveblind.
 
+Baggrundsfarverne er zoner, ikke data. Hver zone har sit navn i nederste
+venstre hjørne — **A+, B+, C+, D+** på kundegruppe-plottet og **Stor/Mellem/
+Lille volumen** på item-plottet — og hver vandret streg har sit beløb i højre
+side. Navnet står med plus, fordi det farvede felt netop dækker den del af
+båndet hvor marginen når kravet; minus-halvdelen er det uskraverede område
+under samme streg.
+
+Teksten hører til baggrunden og tegnes **bag** punkterne. Ligger en kunde oven
+på et zonenavn, er det kunden man kan se. Det kræver at etiketten hænger på
+selve figuren som en `label` — en Plotly-annotation tegnes altid øverst og
+lagde sig derfor hen over punkterne.
+
 Under kundegruppe-plottet — mellem x-aksen og den første knaprække — står en
 **farvekode** for kundetyperne. Den ligger uden for selve grafen, som
 almindelig HTML oven på figuren, så den hverken stjæler plads fra punkterne
