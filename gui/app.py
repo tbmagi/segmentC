@@ -27,6 +27,7 @@ from segmentering.config import (
     settings_path,
 )
 from segmentering.currency import BASE_CURRENCY, CURRENCY_CODES
+from segmentering.language import DEFAULT_BASENAME
 from segmentering.pipeline import run_analysis
 
 from .help_window import show_help_window
@@ -1082,7 +1083,7 @@ class SegmenteringApp(tk.Tk):
             colour_by=self.var_colour_by.get(),
             category_bands=bands,
             volume_zones=zones,
-            output_basename=self.var_basename.get().strip() or "kunde_segmentering",
+            output_basename=self.var_basename.get().strip() or DEFAULT_BASENAME,
             output_dir=self.var_output_dir.get().strip() or None,
         )
 

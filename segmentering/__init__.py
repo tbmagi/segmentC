@@ -8,7 +8,7 @@ Typisk brug fra et script::
     cfg = Config(
         input_path=r"C:\\data\\Clean_data.xlsx",
         reference_date="05-2026",
-        output_basename="kunde_segmentering",
+        output_basename="customer_price_matrix",
     )
     results = run_analysis(cfg)
 

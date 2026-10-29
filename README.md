@@ -1,5 +1,9 @@
 # Kundesegmentering
 
+> Programmet hedder **Kundesegmentering** — det er exe-filen, vinduet og denne
+> mappe. Det den *producerer* hedder **Customer Price Matrix**: det står i
+> grafernes overskrift og i filnavnene, og det er det navn der går ud af huset.
+
 Læser rå salgsdata fra Excel (`.xlsx`, `.xlsm`, `.xls`) og producerer
 interaktive HTML scatter-plots
 (Plotly) samt en formateret Excel-rapport. Hvert punkt er enten én kundegruppe
@@ -62,7 +66,7 @@ cfg = Config(
     input_path=r"C:\data\Clean_data.xlsx",
     reference_date="05-2026",          # MM-ÅÅÅÅ
     turnover_window_months=12,
-    output_basename="kunde_segmentering",
+    output_basename="customer_price_matrix",
     output_dir=r"C:\rapporter",
 )
 results = run_analysis(cfg)
@@ -189,11 +193,25 @@ eller kan slås fra ved et uheld.
 **Dobbeltklik** viser kun den ene kunde — enten på selve punktet eller på
 navnet i legenden. Dobbeltklik igen bringer resten tilbage.
 
-Samme sted under item-plottet står et **søgefelt til varenumre**. Skriv et nummer, og
-varen fremhæves mens resten af punkterne tones ned — de forsvinder ikke, så
-man kan se hvor varen ligger i forhold til de andre. Flere numre ad gangen
-adskilles med komma eller mellemrum, og der søges på en del af nummeret, så
-`7010` finder alle varer der begynder med det. **Ryd** fjerner markeringen.
+Samme sted under item-plottet står et **søgefelt**. Der kan søges på både
+**varenummer og kundenavn**, og de to kan blandes:
+
+```
+701234                     én vare
+DANFOSS                    alle Danfoss' varer
+DANFOSS, GRUNDFOS          begge kunder
+DANFOSS, 701234            alle Danfoss' varer PLUS vare 701234 hvor den end ligger
+```
+
+Der søges på en del af navnet eller nummeret, og store og små bogstaver er
+lige gyldige — `7010` finder alle varer der begynder med det, og `novo` finder
+`NOVO NORDISK`. **Flere søgeord adskilles med komma**, ikke med mellemrum: en
+kundegruppe hedder tit noget med et mellemrum i, og blev navnet delt op i ord,
+ville `GN STORE NORD` også trække `NOVO NORDISK` med ind på ordet `nord`.
+
+De fundne punkter fremhæves mens resten tones ned — de forsvinder ikke, så man
+kan se hvor varen ligger i forhold til de andre. **Ryd** fjerner markeringen.
+Vil du have kun én kunde at se på, er dobbeltklik vejen.
 
 Hover-boksen på et item viser **seneste solgt** — den måned varen sidst blev
 solgt til den kunde, skrevet som ÅÅÅÅ-MM. Mangler datoen, står der en
@@ -325,12 +343,13 @@ samme resultat, så de kan ikke komme til at vise hver sit. Kun graferne
 oversættes; Excel-rapporten og programmet selv er på dansk.
 
 ```
-kunde_segmentering_kundegruppe_stoebe_eks.html            ← dansk
-English/customer_segmentation_customer_group_cast_existing.html
+customer_price_matrix_kundegruppe_stoebe_eks.html                ← dansk
+English/customer_price_matrix_customer_group_cast_existing.html
 ```
 
 Basisnavnet følger med i oversættelsen så længe det står på fabriksnavnet
-`kunde_segmentering` — det er vores eget ord. Har du selv skrevet et navn i
+`customer_price_matrix` — det er vores eget ord. Produktnavnet oversættes
+ikke; det er rollen og suffikserne der skifter. Har du selv skrevet et navn i
 **Basisnavn (filer)**, er det dit, og det bliver stående på begge sprog.
 
 Plotly-biblioteket lægges ind i hver HTML-fil. Det gør filen ca. 4 MB større,
@@ -344,9 +363,9 @@ Står output-mappen tom, oprettes en dateret mappe ved siden af programmet:
 
 ```
 Kundesegmentering 2026-09-15/
-  kunde_segmentering_kundegruppe.html
-  kunde_segmentering_item.html
-  kunde_segmentering.xlsx
+  customer_price_matrix_kundegruppe.html
+  customer_price_matrix_item.html
+  customer_price_matrix.xlsx
 ```
 
 ## Egne standardværdier

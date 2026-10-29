@@ -14,7 +14,14 @@ import pytest
 
 from segmentering.config import Config
 from segmentering.dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
-from segmentering.language import DANISH, ENGLISH, ENGLISH_SUBFOLDER, LANGUAGES
+from segmentering.language import (
+    DANISH,
+    DEFAULT_BASENAME,
+    ENGLISH,
+    ENGLISH_SUBFOLDER,
+    LANGUAGES,
+    PRODUCT_NAME,
+)
 from segmentering.metrics import (
     GP_SUM,
     ITEM_GM,
@@ -249,13 +256,16 @@ def test_the_english_filenames_are_english(tmp_path):
     """
     Mappen sendes videre til nogen der ikke læser dansk, så filnavnet må
     heller ikke være dansk.
+
+    Produktnavnet står dog ens begge steder — det er et navn, ikke et ord
+    der kan oversættes. Det er rollen og suffikserne der skifter.
     """
-    render(tmp_path, english_copy=True, basename="kunde_segmentering",
+    render(tmp_path, english_copy=True, basename=DEFAULT_BASENAME,
            parts=("stoebe", "eks"))
 
-    assert written(tmp_path) == ["kunde_segmentering_kundegruppe_stoebe_eks.html"]
+    assert written(tmp_path) == ["customer_price_matrix_kundegruppe_stoebe_eks.html"]
     assert written(os.path.join(tmp_path, ENGLISH_SUBFOLDER)) == [
-        "customer_segmentation_customer_group_cast_existing.html"
+        "customer_price_matrix_customer_group_cast_existing.html"
     ]
 
 
@@ -318,3 +328,27 @@ def test_each_edition_gets_its_own_currency(tmp_path):
     assert "Samlet Turnover DKK" in dansk
     assert "Total Turnover EUR" in engelsk
     assert "Turnover EUR" not in dansk
+
+
+def test_the_product_name_is_the_same_in_both_editions():
+    """
+    "Customer Price Matrix" er et navn, ikke et ord. Det oversættes ikke —
+    ligesom "Gross Margin" og "Industry segment" allerede står på engelsk i
+    den danske graf.
+    """
+    assert PRODUCT_NAME == "Customer Price Matrix"
+    for texts in (DANISH, ENGLISH):
+        assert texts.group_title.startswith(PRODUCT_NAME), texts.code
+        assert texts.item_title.startswith(PRODUCT_NAME), texts.code
+        assert texts.file_basename == DEFAULT_BASENAME
+    # Men rollen bagefter er stadig oversat
+    assert DANISH.group_title.endswith("Kundegruppe")
+    assert ENGLISH.group_title.endswith("Customer group")
+
+
+def test_the_old_name_is_gone():
+    for texts in (DANISH, ENGLISH):
+        for felt, værdi in vars(texts).items():
+            if isinstance(værdi, str):
+                assert "egmentering" not in værdi, f"{texts.code}.{felt}"
+                assert "segmentation" not in værdi.lower(), f"{texts.code}.{felt}"

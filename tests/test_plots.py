@@ -6,7 +6,7 @@ import pytest
 
 from segmentering.config import CUSTOMER_TYPE_COLOURS, Config
 from segmentering.dataio import GROUP, INDUSTRY_SEGMENT, ITEM_NO, KAM, ReferenceDates
-from segmentering.language import DANISH
+from segmentering.language import DANISH, ENGLISH as ENGLISH_TEXTS
 from segmentering.metrics import (
     GP_SUM,
     ITEM_GM,
@@ -868,3 +868,51 @@ def test_the_level_buttons_carry_the_labels_along():
         nye = menu.buttons[0].args[0]["shapes"]
         navne = [s["label"]["text"] for s in nye if s.get("label")]
         assert any("volumen" in n for n in navne), (menu.buttons[0].label, navne)
+
+
+# --- Søgning på kunde såvel som vare ----------------------------------------
+
+
+def test_the_search_covers_both_items_and_customers():
+    fig = item_scatter(items_with_dates(), Config(), DATES)
+    script = search_script(fig)
+    # Kundenavnet står i sporets navn, varenumrene i dets tekst
+    assert "trace.name" in script, "der kigges ikke på kundenavnet"
+    assert "trace.text" in script, "der kigges ikke på varenumrene"
+
+
+def test_a_customer_match_takes_the_whole_trace():
+    """
+    Hvert spor ER én kundegruppe. Rammer søgeordet kundens navn, skal alle
+    kundens varer med — ikke kun dem hvis nummer tilfældigvis ligner.
+    """
+    script = search_script(item_scatter(items_with_dates(), Config(), DATES))
+    assert "wholeCustomer" in script
+    assert "if (wholeCustomer) { hits.push(i); continue; }" in script
+
+
+def test_the_search_is_not_case_sensitive():
+    script = search_script(item_scatter(items_with_dates(), Config(), DATES))
+    assert "toLowerCase" in script
+
+
+def test_terms_are_separated_by_comma_not_by_space():
+    """
+    En kundegruppe hedder tit noget med et mellemrum i. Blev navnet delt op
+    i ord, ville "GN STORE NORD" også trække "NOVO NORDISK" med ind på
+    ordet "nord".
+    """
+    script = search_script(item_scatter(items_with_dates(), Config(), DATES))
+    assert "split(/[,;]+/)" in script, "mellemrum deler stadig søgeordet op"
+
+
+def test_the_search_box_says_it_takes_both():
+    for texts, forventet in (
+        (DANISH, ("vare", "kunde")),
+        (ENGLISH_TEXTS, ("item", "customer")),
+    ):
+        fig = item_scatter(items_with_dates(), Config(), DATES, texts=texts)
+        label = fig.layout.meta["soegning"]["label"].lower()
+        for ord_ in forventet:
+            assert ord_ in label, f"{texts.code}: '{ord_}' mangler i {label!r}"
+        assert "komma" in texts.search_hint or "comma" in texts.search_hint

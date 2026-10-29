@@ -17,6 +17,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping
 
+#: Produktnavnet. Det oversættes ikke — ligesom "Gross Margin" og
+#: "Industry segment" står det på engelsk i begge sprogudgaver.
+PRODUCT_NAME = "Customer Price Matrix"
+
+#: Fabriksnavnet på de filer der skrives. Det samme på begge sprog, fordi
+#: produktnavnet er det samme; kun rolle-delen og suffikserne oversættes.
+DEFAULT_BASENAME = "customer_price_matrix"
+
 
 @dataclass(frozen=True)
 class Texts:
@@ -104,7 +112,7 @@ class Texts:
 
     def plot_title(self, base: str, segment: str) -> str:
         """
-        Overskriften: "Kundesegmentering – Item – Sinter".
+        Overskriften: "Customer Price Matrix – Item – Sinter".
 
         Udsnittet står i selve overskriften frem for kun i undertitlen, så det
         kan ses hvilket plot man har foran sig uden at læse med småt — også
@@ -134,8 +142,8 @@ class Texts:
 
 DANISH = Texts(
     code="da",
-    group_title="Kundesegmentering – Kundegruppe",
-    item_title="Kundesegmentering – Item",
+    group_title=f"{PRODUCT_NAME} – Kundegruppe",
+    item_title=f"{PRODUCT_NAME} – Item",
     x_axis="Gross Margin (%)",
     group_y_axis="Samlet Turnover {currency} ({months} mdr. vindue)",
     item_y_axis="Turnover {currency} – item niveau ({months} mdr. vindue)",
@@ -165,14 +173,14 @@ DANISH = Texts(
     hover_gm="GM%",
     hover_turnover="Turnover",
     hover_last_sold="Seneste solgt",
-    search_label="Søg varenummer:",
-    search_placeholder="fx 701234, 712345",
-    search_hint="flere adskilles med komma eller mellemrum",
+    search_label="Søg vare eller kunde:",
+    search_placeholder="fx 701234, DANFOSS",
+    search_hint="flere adskilles med komma",
     search_found="{count} varer fremhævet",
     search_found_one="1 vare fremhævet",
     search_none="ingen varer matcher",
     search_clear="Ryd",
-    file_basename="kunde_segmentering",
+    file_basename=DEFAULT_BASENAME,
     file_role_group="kundegruppe",
     file_role_item="item",
     customer_types={},
@@ -183,8 +191,8 @@ DANISH = Texts(
 
 ENGLISH = Texts(
     code="en",
-    group_title="Customer segmentation – Customer group",
-    item_title="Customer segmentation – Item",
+    group_title=f"{PRODUCT_NAME} – Customer group",
+    item_title=f"{PRODUCT_NAME} – Item",
     x_axis="Gross Margin (%)",
     group_y_axis="Total Turnover {currency} ({months} month window)",
     item_y_axis="Turnover {currency} – item level ({months} month window)",
@@ -214,14 +222,14 @@ ENGLISH = Texts(
     hover_gm="GM%",
     hover_turnover="Turnover",
     hover_last_sold="Last sold",
-    search_label="Search item no.:",
-    search_placeholder="e.g. 701234, 712345",
-    search_hint="separate several with a comma or a space",
+    search_label="Search item or customer:",
+    search_placeholder="e.g. 701234, DANFOSS",
+    search_hint="separate several with a comma",
     search_found="{count} items highlighted",
     search_found_one="1 item highlighted",
     search_none="no items match",
     search_clear="Clear",
-    file_basename="customer_segmentation",
+    file_basename=DEFAULT_BASENAME,
     file_role_group="customer_group",
     file_role_item="item",
     customer_types={

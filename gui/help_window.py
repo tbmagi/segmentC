@@ -267,11 +267,18 @@ HELP_CONTENT: list[Block] = [
     (
         BODY,
         "Under item-plottet — mellem x-aksen og knapperne — er der et "
-        "søgefelt til varenumre. Den søgte vare "
-        "fremhæves, og resten af punkterne tones ned frem for at forsvinde, "
-        "så du kan se hvor varen ligger i forhold til de andre. Flere numre "
-        "ad gangen adskilles med komma eller mellemrum, og der søges på en "
-        "del af nummeret, så 7010 finder alle varer der begynder med det.\n\n"
+        "søgefelt. Der kan søges på både varenummer og kundenavn, og de to "
+        "kan blandes:\n\n"
+        "  701234              én vare\n"
+        "  DANFOSS             alle Danfoss' varer\n"
+        "  DANFOSS, 701234     begge dele på én gang\n\n"
+        "Der søges på en del af navnet eller nummeret, og store og små "
+        "bogstaver er lige gyldige. Flere søgeord adskilles med KOMMA, ikke "
+        "med mellemrum — en kundegruppe hedder tit noget med et mellemrum i, "
+        "og blev navnet delt op i ord, ville 'GN STORE NORD' også trække "
+        "'NOVO NORDISK' med ind på ordet 'nord'.\n\n"
+        "De fundne punkter fremhæves, og resten tones ned frem for at "
+        "forsvinde, så du kan se hvor de ligger i forhold til de andre.\n\n"
         "Kører du musen hen over et punkt, står der også 'Seneste solgt' — "
         "den måned varen sidst blev solgt til den kunde.\n\n",
     ),

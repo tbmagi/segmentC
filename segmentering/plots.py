@@ -694,12 +694,18 @@ __PLACE__
 
 #: JavaScript der lægger et søgefelt over item-plottet.
 #:
-#: Søgningen skjuler ikke punkter — den fremhæver dem. Et spor er én
-#: kundegruppe med mange varer, og Plotly kan kun skjule hele spor ad gangen,
-#: så et enkelt varenummer kan ikke slås fra den vej. I stedet markeres de
-#: fundne punkter med ``selectedpoints``, hvorefter resten tones ned. Så kan
-#: man stadig se HVOR i feltet varen ligger i forhold til alle de andre,
-#: hvilket er hele pointen med at slå den op.
+#: Der kan søges på både varenummer og kundenavn, og de to kan blandes:
+#: "DANFOSS 701234" fremhæver alle Danfoss' varer PLUS vare 701234 hvor den
+#: end ligger. Hvert spor er én kundegruppe, så et kundenavn rammer hele
+#: sporet, mens et varenummer rammer de enkelte punkter i det.
+#:
+#: Søgningen skjuler ikke punkter — den fremhæver dem. Plotly kan kun skjule
+#: hele spor ad gangen, så et enkelt varenummer kan ikke slås fra den vej.
+#: Og at skjule hele spor ville slås med filterknapperne, der styrer præcis
+#: den samme ``visible``. I stedet markeres de fundne punkter med
+#: ``selectedpoints``, hvorefter resten tones ned. Så kan man stadig se HVOR
+#: i feltet varen ligger i forhold til alle de andre, hvilket er hele
+#: pointen med at slå den op.
 _SEARCH_SCRIPT = """
 (function () {
   var gd = document.getElementById('{plot_id}');
@@ -747,8 +753,11 @@ _SEARCH_SCRIPT = """
 __PLACE__
   follow(box);
 
+  // Komma og semikolon adskiller. Mellemrum gør IKKE: en kundegruppe hedder
+  // tit noget med et mellemrum i, og blev navnet delt op i ord, ville
+  // "GN STORE NORD" også trække "NOVO NORDISK" med ind på ordet "nord".
   function terms() {
-    return input.value.split(/[\\s,;]+/)
+    return input.value.split(/[,;]+/)
       .map(function (s) { return s.trim().toLowerCase(); })
       .filter(function (s) { return s.length > 0; });
   }
@@ -763,8 +772,17 @@ __PLACE__
     var found = 0;
     var picked = gd.data.map(function (trace) {
       var labels = trace.text || [];
+      // Et søgeord kan pege på en hel kunde. Hvert spor ER én kundegruppe,
+      // så rammer ordet kundens navn, tages alle kundens varer med — uanset
+      // hvad varenumrene hedder.
+      var customer = String(trace.name || '').toLowerCase();
+      var wholeCustomer = false;
+      for (var c = 0; c < wanted.length; c++) {
+        if (customer.indexOf(wanted[c]) !== -1) { wholeCustomer = true; break; }
+      }
       var hits = [];
       for (var i = 0; i < labels.length; i++) {
+        if (wholeCustomer) { hits.push(i); continue; }
         var item = String(labels[i]).toLowerCase();
         for (var w = 0; w < wanted.length; w++) {
           if (item.indexOf(wanted[w]) !== -1) { hits.push(i); break; }

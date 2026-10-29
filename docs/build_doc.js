@@ -368,9 +368,9 @@ add(
   code([
     "Kundesegmentering.exe",
     "Kundesegmentering 2026-09-15\\",
-    "    kunde_segmentering_kundegruppe.html",
-    "    kunde_segmentering_item.html",
-    "    kunde_segmentering.xlsx",
+    "    customer_price_matrix_kundegruppe.html",
+    "    customer_price_matrix_item.html",
+    "    customer_price_matrix.xlsx",
   ]),
   p(
     "Ligger programmet i en mappe der er skrivebeskyttet — for eksempel " +
@@ -786,7 +786,7 @@ add(
   table(
     ["", "Kundegruppe-grafen", "Item-grafen"],
     [
-      ["Overskriften", "Kundesegmentering – Kundegruppe – <udsnit>", "Kundesegmentering – Item – <udsnit>"],
+      ["Overskriften", "Customer Price Matrix – Kundegruppe – <udsnit>", "Customer Price Matrix – Item – <udsnit>"],
       ["Ét punkt er", "én kundegruppe", "ét varenummer hos én kunde"],
       ["Farven følger", "kundetypen", "kundegruppen"],
       ["Legenden viser", "kundenavne pr. kategori", "kundenavne pr. kategori"],
@@ -859,22 +859,31 @@ add(
   h2("Søg efter et varenummer"),
   p(
     "Under item-grafen, samme sted som farvekoden sidder på den anden " +
-      "graf, er der et søgefelt. Skriv et varenummer, og varen " +
-      "bliver fremhævet, mens resten af punkterne tones ned — de forsvinder " +
-      "ikke, så du kan se hvor varen ligger i forhold til alle de andre. " +
-      "**Ryd** fjerner markeringen igen."
+      "graf, er der et søgefelt. Der kan søges på både **varenummer og " +
+      "kundenavn**, og de to kan blandes:"
+  ),
+  code([
+    "701234                 én vare",
+    "DANFOSS                alle Danfoss' varer",
+    "DANFOSS, GRUNDFOS      begge kunder",
+    "DANFOSS, 701234        alle Danfoss' varer PLUS vare 701234",
+  ]),
+  bullet(
+    "**Dele tæller med:** skriver du 7010, fremhæves alle varer hvis nummer " +
+      "indeholder 7010, og novo finder NOVO NORDISK. Store og små bogstaver " +
+      "er lige gyldige."
   ),
   bullet(
-    "**Flere varer ad gangen:** skriv numrene efter hinanden adskilt af " +
-      "komma eller mellemrum, for eksempel 701234, 712345."
-  ),
-  bullet(
-    "**Dele af et nummer tæller med:** skriver du 7010, fremhæves alle varer " +
-      "hvis nummer indeholder 7010."
+    "**Flere søgeord adskilles med komma** — ikke med mellemrum. En " +
+      "kundegruppe hedder tit noget med et mellemrum i, og blev navnet delt " +
+      "op i ord, ville GN STORE NORD også trække NOVO NORDISK med ind på " +
+      "ordet nord."
   ),
   p(
-    "Under feltet står hvor mange varer der blev fundet — eller at ingen " +
-      "varer matcher, hvis nummeret ikke findes i udsnittet."
+    "De fundne punkter fremhæves, mens resten tones ned — de forsvinder " +
+      "ikke, så du kan se hvor de ligger i forhold til alle de andre. " +
+      "**Ryd** fjerner markeringen igen. Under feltet står hvor mange varer " +
+      "der blev fundet, eller at ingen varer matcher."
   ),
   h2("Hvad hover-boksen viser"),
   p(
@@ -1039,12 +1048,12 @@ add(
   ),
   code([
     "Kundesegmentering 2026-09-23/",
-    "  kunde_segmentering_kundegruppe_sinter.html",
-    "  kunde_segmentering_item_sinter.html",
-    "  kunde_segmentering.xlsx",
+    "  customer_price_matrix_kundegruppe_sinter.html",
+    "  customer_price_matrix_item_sinter.html",
+    "  customer_price_matrix.xlsx",
     "  English/",
-    "    customer_segmentation_customer_group_sinter.html",
-    "    customer_segmentation_item_sinter.html",
+    "    customer_price_matrix_customer_group_sinter.html",
+    "    customer_price_matrix_item_sinter.html",
   ]),
   p(
     "Alt i grafen er oversat: titel, akser, knapper, farvekode, søgefelt og " +
@@ -1055,9 +1064,10 @@ add(
   ),
   p(
     "Det samme gælder basisnavnet på filerne. Står feltet **Basisnavn " +
-      "(filer)** på fabriksnavnet kunde_segmentering, er det vores eget ord, " +
-      "og det bliver til customer_segmentation. Har du selv skrevet et navn, " +
-      "er det dit, og det står uændret på begge sprog."
+      "(filer)** på fabriksnavnet customer_price_matrix, er det vores eget " +
+      "ord. Produktnavnet oversættes ikke — det er rollen og suffikserne der " +
+      "skifter, fx kundegruppe til customer_group. Har du selv skrevet et " +
+      "navn, er det dit, og det står uændret på begge sprog."
   ),
   note(
     "Tallene kan ikke komme til at afvige.",

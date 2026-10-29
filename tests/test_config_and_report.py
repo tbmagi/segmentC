@@ -123,7 +123,7 @@ def test_basename_containing_html_survives():
 
 
 def test_empty_basename_falls_back_to_a_default():
-    assert OutputPaths.create("", "/ud", True).basename == "kunde_segmentering"
+    assert OutputPaths.create("", "/ud", True).basename == "customer_price_matrix"
 
 
 def test_excel_path_is_none_when_disabled():

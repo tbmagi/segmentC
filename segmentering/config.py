@@ -20,6 +20,7 @@ from datetime import date
 from typing import Iterable, Literal, Mapping, Sequence
 
 from .currency import BASE_CURRENCY, CURRENCY_CODES, DEFAULT_RATES
+from .language import DEFAULT_BASENAME
 
 #: De to kolonner i Excel-filen der kan bruges som dækningsbidrag. Cons er
 #: konsolideret og er standarden; Local er den lokale opgørelse.
@@ -276,13 +277,13 @@ class OutputPaths:
     def create(
         cls, basename: str, directory: str | None, write_excel: bool
     ) -> "OutputPaths":
-        base = (basename or "kunde_segmentering").strip()
+        base = (basename or DEFAULT_BASENAME).strip()
         for extension in (".html", ".xlsx", ".xlsm", ".xls"):
             if base.lower().endswith(extension):
                 base = base[: -len(extension)]
                 break
         if not base:
-            base = "kunde_segmentering"
+            base = DEFAULT_BASENAME
 
         folder = (directory or "").strip() if isinstance(directory, str) else ""
         if not folder:
@@ -397,7 +398,7 @@ class Config:
     )
 
     # Output
-    output_basename: str = "kunde_segmentering"
+    output_basename: str = DEFAULT_BASENAME
     output_dir: str | None = None
     write_excel: bool = True
 

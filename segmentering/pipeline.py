@@ -352,7 +352,7 @@ def _basename(cfg: Config, texts: Texts) -> str:
     begge sprog — vi kan ikke vide hvad "Q3_analyse_til_ledelsen" hedder på
     engelsk. Står feltet på fabriksnavnet, er det derimod vores eget ord, og
     så oversættes det, så den engelske mappe ikke ender med filer der hedder
-    "kunde_segmentering_customer_group_sinter.html".
+    "Q3_analyse_customer_group_sinter.html" uanset sprogudgave.
     """
     chosen = (cfg.output_basename or "").strip()
     if not chosen or chosen == DANISH.file_basename:
